@@ -102,6 +102,20 @@ Para redesplegar: `cd backend && sam build && sam deploy` (samconfig.toml ya con
 
 BedrockModelId actualizado: `us.anthropic.claude-haiku-4-5-20251001-v1:0` (claude-3-5-haiku era EOL).
 
+## Landing desplegada (2026-08-04)
+
+- **Bucket S3**: `prioria-landing-493735739644` (us-east-1, acceso público bloqueado)
+- **CloudFront distribution**: `E27GXNA3NNHD70`
+- **URL**: `https://d1c6xk2jegfebf.cloudfront.net` (tarda ~15 min en estar activa tras la primera creación)
+- **OAC**: `ESSX2B90LB8WF`
+
+Para redesplegar la landing:
+```bash
+cd landing && npm run build
+aws s3 sync out/ s3://prioria-landing-493735739644 --delete
+aws cloudfront create-invalidation --distribution-id E27GXNA3NNHD70 --paths "/*"
+```
+
 ## Estado actual
 - [x] Scaffold Expo + push a GitHub (LorenGrz/Prioria)
 - [x] NativeWind instalado y configurado (babel.config.js, metro.config.js, global.css, nativewind-env.d.ts)
