@@ -39,3 +39,12 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# backend (SAM / Python)
+backend/.aws-sam/
+backend/**/__pycache__/
+backend/**/*.pyc
+
+# landing (Next.js)
+landing/.next/
+landing/out/

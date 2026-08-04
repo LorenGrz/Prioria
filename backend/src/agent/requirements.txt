@@ -1,0 +1,6 @@
+# Strands Agents SDK is Python-native — this is why the two agent
+# functions run on python3.13 while the rest of the backend is Node.js.
+# Pin versions once you've confirmed them against LorenGrz/simple-agent's
+# lockfile so both projects stay on a known-compatible SDK release.
+strands-agents>=0.1.0
+boto3>=1.34.0
