@@ -30,7 +30,7 @@ Parameters:
     AllowedValues: [dev, prod]
   BedrockModelId:
     Type: String
-    Default: anthropic.claude-3-5-haiku-20241022-v1:0
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
     Description: Bedrock model used by the Strands agent to score/classify notifications.
   FcmServiceAccountSecretArn:
     Type: String

@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "prioria-dev"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+parameter_overrides = [
+  "Stage=dev",
+  "BedrockModelId=us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "FcmServiceAccountSecretArn=arn:aws:secretsmanager:us-east-1:493735739644:secret:prioria/fcm-service-account-nyyPiB",
+  "FcmProjectId=PLACEHOLDER"
+]

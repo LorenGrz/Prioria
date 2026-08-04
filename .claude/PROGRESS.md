@@ -81,6 +81,27 @@ App RN (Android-first) que intercepta notificaciones, un agente les asigna prior
   README.md               deploy a S3+CloudFront
 ```
 
+## Stack AWS desplegado (2026-08-04)
+
+Stack: `prioria-dev` — `us-east-1`
+
+| Output | Valor |
+|--------|-------|
+| ApiUrl | `https://8lmjsd9rc9.execute-api.us-east-1.amazonaws.com/dev` |
+| UserPoolId | `us-east-1_McNa9MqHh` |
+| UserPoolClientId | `1ei1ta3vp0g2sbormecg1h2qkt` |
+| VoiceClipsBucketName | `prioria-voice-clips-dev-493735739644` |
+| NotificationsTableName | `prioria-notifications-dev` |
+
+FCM secret placeholder: `arn:aws:secretsmanager:us-east-1:493735739644:secret:prioria/fcm-service-account-nyyPiB`  
+→ Reemplazar con el JSON real del service account de Firebase cuando se cree el proyecto.
+
+Bedrock: necesita completar el formulario de uso de Anthropic en la consola AWS → Bedrock → Model access → Request access para `us.anthropic.claude-haiku-4-5-20251001-v1:0`.
+
+Para redesplegar: `cd backend && sam build && sam deploy` (samconfig.toml ya configurado).
+
+BedrockModelId actualizado: `us.anthropic.claude-haiku-4-5-20251001-v1:0` (claude-3-5-haiku era EOL).
+
 ## Estado actual
 - [x] Scaffold Expo + push a GitHub (LorenGrz/Prioria)
 - [x] NativeWind instalado y configurado (babel.config.js, metro.config.js, global.css, nativewind-env.d.ts)
