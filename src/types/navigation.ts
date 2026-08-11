@@ -9,4 +9,5 @@ export type MainTabParamList = {
   Entrenar: undefined;
   Historial: undefined;
   Voz: undefined;
+  Prueba: undefined;
 };
