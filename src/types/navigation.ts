@@ -8,6 +8,5 @@ export type MainTabParamList = {
   Filtros: undefined;
   Entrenar: undefined;
   Historial: undefined;
-  Voz: undefined;
-  Prueba: undefined;
+  Ajustes: undefined;
 };

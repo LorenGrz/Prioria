@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -18,32 +18,24 @@ type Message = {
   time?: string;
 };
 
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: '1',
-    from: 'ai',
-    text: '¡Hola! Dime qué tipo de notificaciones te gustaría priorizar o silenciar.',
-  },
-  {
-    id: '2',
-    from: 'user',
-    text: 'Solo avísame de transferencias superiores a $50k',
-    time: '10:42 AM',
-  },
-  {
-    id: '3',
-    from: 'ai',
-    text: 'Entendido. He actualizado tus reglas de filtrado. A partir de ahora, las notificaciones de transferencias por debajo de $50,000 serán silenciadas y agrupadas en tu resumen diario, mientras que las que superen ese monto serán marcadas como Críticas.',
-  },
-];
+const GREETING: Message = {
+  id: 'greeting',
+  from: 'ai',
+  text: '¡Hola! Dime qué tipo de notificaciones te gustaría priorizar o silenciar.',
+};
 
 export default function TrainScreen() {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([GREETING]);
   const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const listRef = useRef<FlatList>(null);
 
-  const handleSend = () => {
+  const scrollToEnd = () => setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+  const handleSend = async () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || sending) return;
+
     const userMsg: Message = {
       id: Date.now().toString(),
       from: 'user',
@@ -51,67 +43,77 @@ export default function TrainScreen() {
       time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
     };
     setDraft('');
+    setSending(true);
     setMessages((prev) => [...prev, userMsg]);
-    // Placeholder ack — real reply comes from the Strands/Bedrock agent via the backend.
+    scrollToEnd();
+
+    // TODO: llamar al endpoint del agente Strands/Bedrock
+    // const response = await api.post('/agent/chat', { message: text });
     setTimeout(() => {
       setMessages((prev) => [
         ...prev,
         {
           id: `${Date.now()}-ai`,
           from: 'ai',
-          text: 'Regla recibida. La aplicaré a tus próximas notificaciones y ajustaré tu resumen diario en consecuencia.',
+          text: 'Regla recibida. La aplicaré a tus próximas notificaciones. (Backend pendiente de conexión)',
         },
       ]);
-    }, 600);
+      setSending(false);
+      scrollToEnd();
+    }, 800);
   };
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-train-background">
-      {/* Top App Bar (dark) */}
-      <View className="h-[72px] w-full flex-row items-center justify-between border-b border-train-surface-container-high bg-train-background px-train-margin-mobile">
-        <View className="flex-row items-center gap-train-unit">
-          <Icon name="shield-check" size={22} color="#c6bfff" />
-          <Text className="font-train-display-lg text-[24px] leading-none text-train-primary-container">
+    <SafeAreaView edges={['top']} className="flex-1 bg-background dark:bg-train-background">
+      {/* Header */}
+      <View className="h-[64px] w-full flex-row items-center justify-between border-b border-outline-variant dark:border-train-outline-variant bg-background dark:bg-train-background px-margin-mobile">
+        <View className="flex-row items-center gap-sm">
+          <Icon name="shield-check" size={22} color="#86a0cd" />
+          <Text className="font-display text-[20px] leading-none text-primary dark:text-train-primary">
             Prioria
           </Text>
         </View>
-        <Icon name="dots-vertical" size={22} color="#c8c4d7" />
+        <Icon name="dots-vertical" size={22} color="#86a0cd" />
       </View>
 
-      <View className="items-center px-train-margin-mobile pt-train-stack-md">
-        <Text className="font-train-headline-lg-mobile text-train-on-surface">
+      <View className="items-center px-margin-mobile pt-md">
+        <Text className="font-headline-lg-mobile text-on-surface dark:text-train-on-surface">
           Chat de Entrenamiento IA
         </Text>
-        <Text className="mt-train-stack-sm text-center font-train-body-sm text-train-on-surface-variant">
+        <Text className="mt-sm text-center font-body-md text-on-surface-variant dark:text-train-on-surface-variant">
           Entrena a tu asistente explicando qué notificaciones son críticas para ti.
         </Text>
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
+        keyboardVerticalOffset={0}
       >
         <FlatList
+          ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
-          contentContainerClassName="gap-train-stack-md px-train-margin-mobile py-train-stack-md"
+          keyboardShouldPersistTaps="handled"
+          contentContainerClassName="gap-md px-margin-mobile py-md"
+          onContentSizeChange={scrollToEnd}
           renderItem={({ item }) =>
             item.from === 'ai' ? (
-              <View className="max-w-[85%] flex-row items-start gap-train-unit">
-                <View className="h-8 w-8 items-center justify-center rounded-full bg-train-surface-container-high">
-                  <Icon name="brain" size={16} color="#c6bfff" />
+              <View className="max-w-[85%] flex-row items-start gap-sm">
+                <View className="h-8 w-8 items-center justify-center rounded-full bg-surface-container dark:bg-train-surface-container-high">
+                  <Icon name="brain" size={16} color="#86a0cd" />
                 </View>
-                <View className="flex-1 rounded-2xl rounded-tl-none border border-train-surface-container-high bg-train-surface-container p-train-margin-mobile">
-                  <Text className="font-train-body-sm text-train-on-surface">{item.text}</Text>
+                <View className="flex-1 rounded-2xl rounded-tl-none border border-outline-variant dark:border-train-surface-container-high bg-surface-container-low dark:bg-train-surface-container p-md">
+                  <Text className="font-body-md text-on-surface dark:text-train-on-surface">{item.text}</Text>
                 </View>
               </View>
             ) : (
               <View className="items-end gap-1">
-                <View className="max-w-[85%] rounded-2xl rounded-tr-none bg-train-primary-container p-train-margin-mobile">
-                  <Text className="font-train-body-sm text-train-on-primary-container">{item.text}</Text>
+                <View className="max-w-[85%] rounded-2xl rounded-tr-none bg-primary-container dark:bg-train-primary-container p-md">
+                  <Text className="font-body-md text-on-primary-container dark:text-train-on-primary-container">{item.text}</Text>
                 </View>
                 {item.time && (
-                  <Text className="mr-1 text-[10px] text-train-on-surface-variant">{item.time}</Text>
+                  <Text className="mr-1 text-[10px] text-on-surface-variant dark:text-train-on-surface-variant">{item.time}</Text>
                 )}
               </View>
             )
@@ -119,22 +121,28 @@ export default function TrainScreen() {
         />
 
         {/* Input */}
-        <View className="border-t border-train-surface-container-high bg-train-background/95 px-train-margin-mobile pb-train-margin-mobile pt-train-stack-sm">
-          <View className="flex-row items-center gap-train-unit rounded-full border border-train-surface-container-high bg-train-surface-container-low py-1 pl-4 pr-1">
+        <View className="border-t border-outline-variant dark:border-train-outline-variant bg-background dark:bg-train-background px-margin-mobile pb-md pt-sm">
+          <View className="flex-row items-center gap-sm rounded-full border border-outline-variant dark:border-train-outline-variant bg-surface-container-low dark:bg-train-surface-container-low py-1 pl-4 pr-1">
             <TextInput
               value={draft}
               onChangeText={setDraft}
               placeholder="Escribe una regla para tu asistente..."
-              placeholderTextColor="#c8c4d7"
-              className="flex-1 font-train-body-sm text-train-on-surface"
+              placeholderTextColor="#74777f"
+              className="flex-1 font-body-md text-on-surface dark:text-train-on-surface"
               onSubmitEditing={handleSend}
               returnKeyType="send"
+              editable={!sending}
             />
             <Pressable
               onPress={handleSend}
-              className="h-10 w-10 items-center justify-center rounded-full bg-train-primary-container active:opacity-90"
+              disabled={sending || !draft.trim()}
+              className={`h-10 w-10 items-center justify-center rounded-full active:opacity-90 ${
+                sending || !draft.trim()
+                  ? 'bg-surface-container dark:bg-train-surface-container-high'
+                  : 'bg-primary-container dark:bg-train-primary-container'
+              }`}
             >
-              <Icon name="send" size={18} color="#faf6ff" />
+              <Icon name={sending ? 'dots-horizontal' : 'send'} size={18} color="#faf6ff" />
             </Pressable>
           </View>
         </View>
