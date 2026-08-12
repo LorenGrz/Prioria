@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import * as Speech from 'expo-speech';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
-import TopAppBar from '../components/TopAppBar';
 import Icon from '../components/Icon';
 import { useTheme } from '../context/ThemeContext';
 
@@ -52,9 +52,18 @@ export default function AjustesScreen() {
   const thumbColor = isDark ? '#c6bfff' : '#002045';
   const devCardBg  = isDark ? '#161d1f' : undefined;
 
-  const handleTest = () => {
+  const handleTest = async () => {
+    if (testing) { Speech.stop(); setTesting(false); return; }
     setTesting(true);
-    setTimeout(() => setTesting(false), 2000);
+    const text = voiceId === 'lucia'
+      ? 'Hola, soy Lucía. Voy a leer tus notificaciones más importantes.'
+      : 'Hola, soy Enrique. Estoy listo para ayudarte con tus alertas.';
+    await Speech.speak(text, {
+      language: 'es-ES',
+      rate: speed,
+      onDone: () => setTesting(false),
+      onError: () => setTesting(false),
+    });
   };
 
   async function checkPermission() {
@@ -107,8 +116,7 @@ export default function AjustesScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-background dark:bg-train-background">
-      <TopAppBar />
+    <SafeAreaView edges={[]} className="flex-1 bg-background dark:bg-train-background">
       <ScrollView className="flex-1 px-margin-mobile" contentContainerClassName="pb-xl pt-md">
 
         {/* ── Apariencia ── */}
@@ -128,9 +136,12 @@ export default function AjustesScreen() {
         {/* ── Voz ── */}
         <SectionTitle label="Configuración de Voz" isDark={isDark} />
 
-        <View className="mb-lg flex-row items-center gap-sm rounded-lg bg-primary px-md py-xs">
-          <Icon name="cloud-check-outline" size={20} color="#ffffff" />
-          <Text className="font-label-lg text-white">Conectado a Amazon Polly</Text>
+        <View className="mb-lg flex-row items-center gap-sm rounded-lg bg-surface-container-low dark:bg-train-surface-container-low border border-outline-variant dark:border-train-outline-variant px-md py-xs">
+          <Icon name="microphone-outline" size={20} color={iconColor} />
+          <Text className="font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">TTS nativo del dispositivo</Text>
+          <View className="ml-auto rounded-full bg-orange-100 px-sm py-0.5">
+            <Text className="text-[11px] font-bold text-orange-700">Dev</Text>
+          </View>
         </View>
 
         {/* Selector de voz */}

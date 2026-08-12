@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Speech from 'expo-speech';
 import Icon from '../components/Icon';
 
 type Message = {
@@ -48,34 +49,20 @@ export default function TrainScreen() {
     scrollToEnd();
 
     // TODO: llamar al endpoint del agente Strands/Bedrock
-    // const response = await api.post('/agent/chat', { message: text });
     setTimeout(() => {
+      const aiText = 'Regla recibida. La aplicaré a tus próximas notificaciones.';
       setMessages((prev) => [
         ...prev,
-        {
-          id: `${Date.now()}-ai`,
-          from: 'ai',
-          text: 'Regla recibida. La aplicaré a tus próximas notificaciones. (Backend pendiente de conexión)',
-        },
+        { id: `${Date.now()}-ai`, from: 'ai', text: aiText },
       ]);
       setSending(false);
       scrollToEnd();
+      Speech.speak(aiText, { language: 'es-ES', rate: 1.0 });
     }, 800);
   };
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-background dark:bg-train-background">
-      {/* Header */}
-      <View className="h-[64px] w-full flex-row items-center justify-between border-b border-outline-variant dark:border-train-outline-variant bg-background dark:bg-train-background px-margin-mobile">
-        <View className="flex-row items-center gap-sm">
-          <Icon name="shield-check" size={22} color="#86a0cd" />
-          <Text className="font-display text-[20px] leading-none text-primary dark:text-train-primary">
-            Prioria
-          </Text>
-        </View>
-        <Icon name="dots-vertical" size={22} color="#86a0cd" />
-      </View>
-
+    <SafeAreaView edges={[]} className="flex-1 bg-background dark:bg-train-background">
       <View className="items-center px-margin-mobile pt-md">
         <Text className="font-headline-lg-mobile text-on-surface dark:text-train-on-surface">
           Chat de Entrenamiento IA
