@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import * as Speech from 'expo-speech';
+import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import Icon from '../components/Icon';
@@ -45,6 +46,7 @@ export default function AjustesScreen() {
   const [lastNotifId, setLastNotifId] = useState<string | null>(null);
   const [tokenMsg, setTokenMsg] = useState<string | null>(null);
 
+  const isExpoGo = Constants.appOwnership === 'expo';
   const iconColor = isDark ? '#c8c4d7' : '#43474e';
   const cardBg    = isDark ? '#1a2123' : '#ffffff';
   const trackMin  = isDark ? '#c6bfff' : '#002045';
@@ -242,84 +244,106 @@ export default function AjustesScreen() {
           <View className="h-px flex-1 bg-outline-variant dark:bg-train-outline-variant" />
         </View>
 
-        {/* Permiso notificaciones */}
-        <View
-          className="mb-md rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
-          style={devCardBg ? { backgroundColor: devCardBg } : undefined}
-        >
-          <View className="mb-sm flex-row items-center justify-between">
-            <View className="flex-row items-center gap-sm">
-              <Icon name="bell-ring-outline" size={18} color={iconColor} />
-              <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Permiso notificaciones</Text>
+        {isExpoGo ? (
+          /* Expo Go no soporta expo-notifications en Android desde SDK 53 */
+          <View
+            className="mb-md rounded-xl border border-orange-200 dark:border-orange-900 p-md"
+            style={devCardBg ? { backgroundColor: devCardBg } : undefined}
+          >
+            <View className="mb-sm flex-row items-center gap-sm">
+              <Icon name="information-outline" size={18} color="#c2410c" />
+              <Text className="font-label-lg text-orange-700 dark:text-orange-400">Expo Go — limitaciones</Text>
             </View>
-            <StatusBadge status={permStatus} />
-          </View>
-          <View className="flex-row gap-sm">
-            <Pressable onPress={requestPermission} className="flex-1 h-10 flex-row items-center justify-center gap-xs rounded-lg bg-primary active:opacity-80">
-              <Icon name="bell-plus-outline" size={16} color="#fff" />
-              <Text className="font-label-lg text-on-primary">Solicitar</Text>
-            </Pressable>
-            <Pressable onPress={checkPermission} className="flex-1 h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
-              <Icon name="refresh" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
-              <Text className="font-label-lg text-primary dark:text-train-primary">Verificar</Text>
+            <Text className="mb-md text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">
+              Las notificaciones locales no están disponibles en Expo Go (Android SDK 53+). Instalá el APK de EAS para probarlas.
+            </Text>
+            <Pressable onPress={Linking.openSettings} className="h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
+              <Icon name="cog-outline" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
+              <Text className="font-label-lg text-primary dark:text-train-primary">Acceso a notificaciones del sistema</Text>
             </Pressable>
           </View>
-        </View>
+        ) : (
+          <>
+            {/* Permiso notificaciones */}
+            <View
+              className="mb-md rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
+              style={devCardBg ? { backgroundColor: devCardBg } : undefined}
+            >
+              <View className="mb-sm flex-row items-center justify-between">
+                <View className="flex-row items-center gap-sm">
+                  <Icon name="bell-ring-outline" size={18} color={iconColor} />
+                  <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Permiso notificaciones</Text>
+                </View>
+                <StatusBadge status={permStatus} />
+              </View>
+              <View className="flex-row gap-sm">
+                <Pressable onPress={requestPermission} className="flex-1 h-10 flex-row items-center justify-center gap-xs rounded-lg bg-primary active:opacity-80">
+                  <Icon name="bell-plus-outline" size={16} color="#fff" />
+                  <Text className="font-label-lg text-on-primary">Solicitar</Text>
+                </Pressable>
+                <Pressable onPress={checkPermission} className="flex-1 h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
+                  <Icon name="refresh" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
+                  <Text className="font-label-lg text-primary dark:text-train-primary">Verificar</Text>
+                </Pressable>
+              </View>
+            </View>
 
-        {/* Notificación local */}
-        <View
-          className="mb-md rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
-          style={devCardBg ? { backgroundColor: devCardBg } : undefined}
-        >
-          <View className="mb-sm flex-row items-center gap-sm">
-            <Icon name="bell-outline" size={18} color={iconColor} />
-            <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Notificación local (3 s)</Text>
-          </View>
-          <Pressable onPress={sendLocal} className="h-10 flex-row items-center justify-center gap-xs rounded-lg bg-primary active:opacity-80">
-            <Icon name="send-outline" size={16} color="#fff" />
-            <Text className="font-label-lg text-on-primary">Enviar prueba</Text>
-          </Pressable>
-          {lastNotifId && (
-            <Text className="mt-xs text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">ID: {lastNotifId}</Text>
-          )}
-        </View>
+            {/* Notificación local */}
+            <View
+              className="mb-md rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
+              style={devCardBg ? { backgroundColor: devCardBg } : undefined}
+            >
+              <View className="mb-sm flex-row items-center gap-sm">
+                <Icon name="bell-outline" size={18} color={iconColor} />
+                <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Notificación local (3 s)</Text>
+              </View>
+              <Pressable onPress={sendLocal} className="h-10 flex-row items-center justify-center gap-xs rounded-lg bg-primary active:opacity-80">
+                <Icon name="send-outline" size={16} color="#fff" />
+                <Text className="font-label-lg text-on-primary">Enviar prueba</Text>
+              </Pressable>
+              {lastNotifId && (
+                <Text className="mt-xs text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">ID: {lastNotifId}</Text>
+              )}
+            </View>
 
-        {/* Token */}
-        <View
-          className="mb-md rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
-          style={devCardBg ? { backgroundColor: devCardBg } : undefined}
-        >
-          <View className="mb-sm flex-row items-center gap-sm">
-            <Icon name="identifier" size={18} color={iconColor} />
-            <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Expo Push Token</Text>
-          </View>
-          {tokenMsg
-            ? <Text className="mb-sm rounded-lg bg-surface-container-highest dark:bg-train-surface-container-highest p-sm text-body-sm text-on-surface dark:text-train-on-surface" selectable>{tokenMsg}</Text>
-            : <Text className="mb-sm text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">Sin token.</Text>
-          }
-          <Pressable onPress={fetchToken} className="h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
-            <Icon name="key-outline" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
-            <Text className="font-label-lg text-primary dark:text-train-primary">Obtener token</Text>
-          </Pressable>
-        </View>
+            {/* Token */}
+            <View
+              className="mb-md rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
+              style={devCardBg ? { backgroundColor: devCardBg } : undefined}
+            >
+              <View className="mb-sm flex-row items-center gap-sm">
+                <Icon name="identifier" size={18} color={iconColor} />
+                <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Expo Push Token</Text>
+              </View>
+              {tokenMsg
+                ? <Text className="mb-sm rounded-lg bg-surface-container-highest dark:bg-train-surface-container-highest p-sm text-body-sm text-on-surface dark:text-train-on-surface" selectable>{tokenMsg}</Text>
+                : <Text className="mb-sm text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">Sin token.</Text>
+              }
+              <Pressable onPress={fetchToken} className="h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
+                <Icon name="key-outline" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
+                <Text className="font-label-lg text-primary dark:text-train-primary">Obtener token</Text>
+              </Pressable>
+            </View>
 
-        {/* NotificationListenerService */}
-        <View
-          className="mb-xl rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
-          style={devCardBg ? { backgroundColor: devCardBg } : undefined}
-        >
-          <View className="mb-sm flex-row items-center gap-sm">
-            <Icon name="shield-key-outline" size={18} color={iconColor} />
-            <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Acceso a notificaciones del sistema</Text>
-          </View>
-          <Text className="mb-sm text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">
-            Habilita NotificationListenerService en los ajustes de Android.
-          </Text>
-          <Pressable onPress={Linking.openSettings} className="h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
-            <Icon name="cog-outline" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
-            <Text className="font-label-lg text-primary dark:text-train-primary">Abrir ajustes</Text>
-          </Pressable>
-        </View>
+            {/* NotificationListenerService */}
+            <View
+              className="mb-xl rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
+              style={devCardBg ? { backgroundColor: devCardBg } : undefined}
+            >
+              <View className="mb-sm flex-row items-center gap-sm">
+                <Icon name="shield-key-outline" size={18} color={iconColor} />
+                <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Acceso a notificaciones del sistema</Text>
+              </View>
+              <Text className="mb-sm text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">
+                Habilita NotificationListenerService en los ajustes de Android.
+              </Text>
+              <Pressable onPress={Linking.openSettings} className="h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
+                <Icon name="cog-outline" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
+                <Text className="font-label-lg text-primary dark:text-train-primary">Abrir ajustes</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
 
       </ScrollView>
     </SafeAreaView>
