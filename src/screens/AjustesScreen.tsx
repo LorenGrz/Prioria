@@ -79,24 +79,19 @@ export default function AjustesScreen() {
       const N = await import('expo-notifications');
       const { status } = await N.requestPermissionsAsync();
       setPermStatus(status as PermStatus);
+      if (status === 'granted') Alert.alert('Listo', 'Permiso concedido.');
     } catch {
       setPermStatus('unavailable');
-      Alert.alert('No disponible', 'Requiere el APK descargado desde EAS, no Expo Go.');
+      Alert.alert('No disponible', 'Las notificaciones locales pueden funcionar igual. Intentá enviar la prueba.');
     }
   }
 
   async function sendLocal() {
     try {
       const N = await import('expo-notifications');
-      N.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true, shouldShowBanner: true,
-          shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false,
-        }),
-      });
       const id = await N.scheduleNotificationAsync({
         content: { title: 'Prioria — Prueba', body: 'Notificación local de prueba.' },
-        trigger: { type: N.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 3 },
+        trigger: { seconds: 3, repeats: false } as any,
       });
       setLastNotifId(id.slice(0, 20) + '…');
       Alert.alert('Enviada', 'Aparece en 3 segundos.');
