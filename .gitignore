@@ -38,7 +38,7 @@ yarn-error.*
 
 # generated native folders
 /ios
-/android
+# /android — tracked because it contains custom native modules (NotificationListenerService)
 
 # backend (SAM / Python)
 backend/.aws-sam/

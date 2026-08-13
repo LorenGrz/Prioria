@@ -1,0 +1,33 @@
+package com.lorengrz.prioria
+
+import android.content.pm.PackageManager
+import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
+
+class PrioriaNotificationListener : NotificationListenerService() {
+
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Ignore Prioria's own notifications to avoid loops
+        if (sbn.packageName == packageName) return
+
+        val extras = sbn.notification?.extras ?: return
+        val title = extras.getString("android.title") ?: return
+        val body = extras.getCharSequence("android.text")?.toString() ?: ""
+
+        val appName = try {
+            val pm = applicationContext.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString()
+        } catch (e: PackageManager.NameNotFoundException) {
+            sbn.packageName
+        }
+
+        NotificationModule.getInstance()?.sendNotificationEvent(
+            packageName = sbn.packageName,
+            appName = appName,
+            title = title,
+            body = body,
+        )
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {}
+}
