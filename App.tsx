@@ -1,6 +1,8 @@
 import './global.css';
 import { useCallback, useEffect } from 'react';
-import { View } from 'react-native';
+import { LogBox, View } from 'react-native';
+
+LogBox.ignoreAllLogs();
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
