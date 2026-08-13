@@ -24,8 +24,9 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build APK via EAS (cloud)
+        timeout-minutes: 60
         run: |
-          # --json outputs build metadata; --wait blocks until done
+          # --json: EAS writes progress to stderr (visible in logs), final JSON to stdout
           eas build \
             --platform android \
             --profile preview \
@@ -33,23 +34,26 @@ jobs:
             --wait \
             --json \
             --no-auto-submit \
-            2>/dev/null | tee /tmp/eas_build.json || \
-          eas build \
-            --platform android \
-            --profile preview \
-            --non-interactive \
-            --wait \
-            --json \
-            --no-auto-submit \
-            | tee /tmp/eas_build.json
+            > /tmp/eas_build.json
+          echo "=== EAS Build JSON ==="
+          cat /tmp/eas_build.json
 
       - name: Download APK from EAS
         run: |
           BUILD_URL=$(python3 -c "
           import json, sys
-          data = json.load(open('/tmp/eas_build.json'))
+          with open('/tmp/eas_build.json') as f:
+            content = f.read().strip()
+          if not content:
+            print('ERROR: eas_build.json is empty', file=sys.stderr)
+            sys.exit(1)
+          data = json.loads(content)
           builds = data if isinstance(data, list) else [data]
-          print(builds[0]['artifacts']['buildUrl'])
+          url = builds[0].get('artifacts', {}).get('buildUrl') or builds[0].get('buildUrl', '')
+          if not url:
+            print('ERROR: no buildUrl in JSON:', json.dumps(builds[0], indent=2), file=sys.stderr)
+            sys.exit(1)
+          print(url)
           ")
           echo "Downloading from: $BUILD_URL"
           curl -L -o prioria.apk "$BUILD_URL"
