@@ -91,14 +91,29 @@ export default function AjustesScreen() {
   async function sendLocal() {
     try {
       const N = await import('expo-notifications');
+      await N.setNotificationChannelAsync('default', {
+        name: 'Prioria',
+        importance: N.AndroidImportance.HIGH,
+        sound: 'default',
+      });
+      N.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true, shouldShowBanner: true,
+          shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false,
+        }),
+      });
       const id = await N.scheduleNotificationAsync({
         content: { title: 'Prioria — Prueba', body: 'Notificación local de prueba.' },
-        trigger: { seconds: 3, repeats: false } as any,
+        trigger: {
+          type: N.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: 3,
+          repeats: false,
+        },
       });
       setLastNotifId(id.slice(0, 20) + '…');
-      Alert.alert('Enviada', 'Aparece en 3 segundos.');
+      Alert.alert('Enviada', 'Aparece en 3 segundos. Minimizá la app.');
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'No disponible en Expo Go.');
+      Alert.alert('Error', e?.message ?? 'No disponible.');
     }
   }
 
