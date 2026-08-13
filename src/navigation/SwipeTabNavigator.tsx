@@ -23,8 +23,10 @@ const SCREENS = [HomeScreen, FiltersScreen, TrainScreen, HistoryScreen, AjustesS
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const TAB_WIDTH = SCREEN_WIDTH / TABS.length;
-const PILL_WIDTH = 72;
+// Pill wide enough for icon + longest label ("Ajustes" ~42px + icon 18px + gap 5px + h-pad 20px)
+const PILL_WIDTH = Math.min(Math.round(TAB_WIDTH * 0.90), 88);
 const PILL_HEIGHT = 36;
+const TAB_BAR_HEIGHT = 60;
 
 export default function SwipeTabNavigator() {
   const pagerRef = useRef<PagerView>(null);
@@ -60,15 +62,19 @@ export default function SwipeTabNavigator() {
 
   const barBg       = isDark ? '#0e1416' : '#faf8ff';
   const borderColor = isDark ? '#474554' : '#c4c6cf';
-  const iconColor   = isDark ? '#c8c4d7' : '#43474e';
+  const iconColor   = isDark ? '#c8c4d7' : '#6b7280';
   const pillBg      = isDark ? '#6c5ce7' : '#1a365d';
   const pillText    = isDark ? '#faf6ff' : '#e8eef9';
   const navBg       = isDark ? '#0e1416' : '#faf8ff';
 
+  // Pill slides to center of each tab
   const pillTranslateX = indicatorAnim.interpolate({
     inputRange: TABS.map((_, i) => i),
     outputRange: TABS.map((_, i) => i * TAB_WIDTH + (TAB_WIDTH - PILL_WIDTH) / 2),
   });
+
+  // Pill vertical center: (TAB_BAR_HEIGHT - PILL_HEIGHT) / 2
+  const pillTop = (TAB_BAR_HEIGHT - PILL_HEIGHT) / 2;
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: navBg }}>
@@ -84,7 +90,6 @@ export default function SwipeTabNavigator() {
           if (tappedRef.current) {
             tappedRef.current = false;
           } else {
-            // swipe gesture — animate from here
             animateIndicator(idx);
           }
         }}
@@ -104,11 +109,11 @@ export default function SwipeTabNavigator() {
         borderTopColor: borderColor,
         paddingBottom: insets.bottom || 8,
       }}>
-        {/* Animated sliding indicator */}
+        {/* Animated sliding pill — sits behind the tab buttons */}
         <Animated.View
           style={{
             position: 'absolute',
-            top: 8,
+            top: pillTop,
             left: 0,
             width: PILL_WIDTH,
             height: PILL_HEIGHT,
@@ -119,25 +124,32 @@ export default function SwipeTabNavigator() {
         />
 
         {/* Tab buttons */}
-        <View style={{ flexDirection: 'row', height: 56 }}>
+        <View style={{ flexDirection: 'row', height: TAB_BAR_HEIGHT }}>
           {TABS.map((tab, i) => {
             const focused = activeIndex === i;
             return (
               <Pressable
                 key={tab.label}
                 onPress={() => goTo(i)}
-                style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: 6 }}
+                style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
                 hitSlop={4}
               >
-                <Icon
-                  name={focused ? tab.iconFocused : tab.icon}
-                  size={20}
-                  color={focused ? pillText : iconColor}
-                />
-                {focused && (
-                  <Text style={{ color: pillText, fontSize: 10, fontWeight: '600', letterSpacing: 0.3 }}>
-                    {tab.label}
-                  </Text>
+                {focused ? (
+                  // Active: icon (smaller) + label side by side inside pill area
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Icon name={tab.iconFocused} size={18} color={pillText} />
+                    <Text style={{
+                      color: pillText,
+                      fontSize: 12,
+                      fontWeight: '700',
+                      letterSpacing: 0.2,
+                    }}>
+                      {tab.label}
+                    </Text>
+                  </View>
+                ) : (
+                  // Inactive: larger icon, no pill
+                  <Icon name={tab.icon} size={24} color={iconColor} />
                 )}
               </Pressable>
             );

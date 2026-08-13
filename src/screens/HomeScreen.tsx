@@ -36,7 +36,10 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView edges={[]} className="flex-1 bg-background dark:bg-train-background">
-      <ScrollView className="flex-1 px-margin-mobile" contentContainerClassName="space-y-lg py-lg">
+      <ScrollView
+        className="flex-1 px-margin-mobile"
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: 24, gap: 12 }}
+      >
 
         {/* Status */}
         <View className="flex-row items-center justify-between rounded-xl border border-outline-variant dark:border-train-outline-variant bg-surface-container-low dark:bg-train-surface-container-low p-md">
@@ -62,7 +65,7 @@ export default function HomeScreen() {
 
         {/* Last notification */}
         <View>
-          <Text className="mb-sm px-1 font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
+          <Text className="mb-xs px-1 font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
             Última Notificación
           </Text>
           {latest ? (
@@ -95,21 +98,23 @@ export default function HomeScreen() {
               </View>
             </View>
           ) : (
-            <View className="items-center justify-center rounded-xl border border-dashed border-outline-variant dark:border-train-outline-variant bg-surface-container-lowest dark:bg-train-surface-container p-xl">
-              <Icon name="bell-off-outline" size={32} color={iconColor} />
-              <Text className="mt-sm text-center font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
-                Sin notificaciones aún
-              </Text>
-              <Text className="mt-xs text-center text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">
-                Habilitá el acceso en Ajustes → Acceso a notificaciones del sistema
-              </Text>
+            <View className="flex-row items-center gap-md rounded-xl border border-dashed border-outline-variant dark:border-train-outline-variant bg-surface-container-lowest dark:bg-train-surface-container px-md py-lg">
+              <Icon name="bell-off-outline" size={28} color={iconColor} />
+              <View className="flex-1">
+                <Text className="font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
+                  Sin notificaciones aún
+                </Text>
+                <Text className="text-body-sm text-on-surface-variant dark:text-train-on-surface-variant opacity-70">
+                  Ajustes → Acceso a notificaciones del sistema
+                </Text>
+              </View>
             </View>
           )}
         </View>
 
         {/* Daily summary */}
         <View>
-          <Text className="mb-sm px-1 font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
+          <Text className="mb-xs px-1 font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
             Resumen del Día
           </Text>
           <View className="flex-row flex-wrap gap-sm">
