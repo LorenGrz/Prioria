@@ -23,15 +23,44 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build APK via EAS
-        run: eas build --platform android --profile preview --non-interactive --wait --output ./prioria.apk
+      - name: Build APK via EAS (cloud)
+        run: |
+          # --json outputs build metadata; --wait blocks until done
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json \
+            --no-auto-submit \
+            2>/dev/null | tee /tmp/eas_build.json || \
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json \
+            --no-auto-submit \
+            | tee /tmp/eas_build.json
+
+      - name: Download APK from EAS
+        run: |
+          BUILD_URL=$(python3 -c "
+          import json, sys
+          data = json.load(open('/tmp/eas_build.json'))
+          builds = data if isinstance(data, list) else [data]
+          print(builds[0]['artifacts']['buildUrl'])
+          ")
+          echo "Downloading from: $BUILD_URL"
+          curl -L -o prioria.apk "$BUILD_URL"
+          ls -lh prioria.apk
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
-          gh release create "$VERSION" ./prioria.apk \
+          gh release create "$VERSION" prioria.apk \
             --title "Prioria $VERSION" \
             --notes "Build automático desde commit \`$(git rev-parse --short HEAD)\`" \
             --latest
