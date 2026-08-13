@@ -20,6 +20,7 @@ import {
 } from '@expo-google-fonts/atkinson-hyperlegible-next';
 import RootNavigator from './src/navigation/RootNavigator';
 import { ThemeProvider } from './src/context/ThemeContext';
+import { NotificationProvider } from './src/context/NotificationContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -51,6 +52,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
+      <NotificationProvider>
       <SafeAreaProvider>
         <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
           <NavigationContainer>
@@ -59,6 +61,7 @@ export default function App() {
           <StatusBar style="auto" />
         </View>
       </SafeAreaProvider>
+      </NotificationProvider>
     </ThemeProvider>
   );
 }
