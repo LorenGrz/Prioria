@@ -11,6 +11,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import Icon from '../components/Icon';
+import { useAuth } from '../context/AuthContext';
+import { apiCall } from '../services/api';
 
 type Message = {
   id: string;
@@ -30,6 +32,7 @@ export default function TrainScreen() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList>(null);
+  const { token } = useAuth();
 
   const scrollToEnd = () => setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
 
@@ -48,17 +51,24 @@ export default function TrainScreen() {
     setMessages((prev) => [...prev, userMsg]);
     scrollToEnd();
 
-    // TODO: llamar al endpoint del agente Strands/Bedrock
-    setTimeout(() => {
-      const aiText = 'Regla recibida. La aplicaré a tus próximas notificaciones.';
+    try {
+      const data = await apiCall<{ reply: string }>('/train', 'POST', { message: text }, token);
+      const aiText = data.reply ?? 'Regla guardada.';
       setMessages((prev) => [
         ...prev,
         { id: `${Date.now()}-ai`, from: 'ai', text: aiText },
       ]);
+      Speech.speak(aiText, { language: 'es-ES', rate: 1.0 });
+    } catch {
+      const errText = 'No pude conectarme al asistente. Revisá tu conexión.';
+      setMessages((prev) => [
+        ...prev,
+        { id: `${Date.now()}-ai`, from: 'ai', text: errText },
+      ]);
+    } finally {
       setSending(false);
       scrollToEnd();
-      Speech.speak(aiText, { language: 'es-ES', rate: 1.0 });
-    }, 800);
+    }
   };
 
   return (

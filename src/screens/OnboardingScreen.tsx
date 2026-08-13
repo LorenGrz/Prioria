@@ -117,8 +117,8 @@ export default function OnboardingScreen({ navigation }: Props) {
       >
         {/* STEP 0: Welcome */}
         <View style={{ width: SCREEN_WIDTH }} className="flex-1 items-center justify-center px-margin-mobile">
-          <View className="mb-xl h-40 w-40 items-center justify-center rounded-full bg-primary-container">
-            <Icon name="bell-ring" size={72} color="#002045" />
+          <View style={{ width: 200, height: 200, borderRadius: 100, backgroundColor: '#dae2fd', alignItems: 'center', justifyContent: 'center', marginBottom: 32 }}>
+            <Icon name="bell-ring" size={88} color="#002045" />
           </View>
           <Text className="mb-md text-center font-headline-lg text-primary">
             Atención Blindada
@@ -137,7 +137,7 @@ export default function OnboardingScreen({ navigation }: Props) {
 
           {/* Notificaciones */}
           <View className="mb-md flex-row items-center gap-md rounded-xl border border-outline-variant bg-surface-container-low p-md">
-            <View className={`h-10 w-10 items-center justify-center rounded-full ${permOk ? 'bg-green-100' : 'bg-primary-container'}`}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: permOk ? '#dcfce7' : '#dae2fd', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name={permOk ? 'check-circle' : 'bell-outline'} size={22} color={permOk ? '#16a34a' : '#002045'} />
             </View>
             <View className="flex-1">
@@ -151,7 +151,7 @@ export default function OnboardingScreen({ navigation }: Props) {
 
           {/* Listener */}
           <View className="mb-xl flex-row items-center gap-md rounded-xl border border-outline-variant bg-surface-container-low p-md">
-            <View className={`h-10 w-10 items-center justify-center rounded-full ${listenerOk ? 'bg-green-100' : 'bg-primary-container'}`}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: listenerOk ? '#dcfce7' : '#dae2fd', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name={listenerOk ? 'check-circle' : 'shield-key-outline'} size={22} color={listenerOk ? '#16a34a' : '#002045'} />
             </View>
             <View className="flex-1">

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/widget_background"
+    android:gravity="center_vertical">
+
+    <!-- Header: Prioria label + priority dot -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="6dp">
+
+        <TextView
+            android:id="@+id/widget_brand"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Prioria"
+            android:textColor="#9b8fe8"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.08" />
+
+        <View
+            android:id="@+id/widget_priority_dot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/widget_dot"
+            android:layout_marginStart="6dp" />
+
+        <TextView
+            android:id="@+id/widget_priority_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Crítica"
+            android:textColor="#f87171"
+            android:textSize="10sp"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+
+    <!-- Notification title -->
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Sin notificaciones"
+        android:textColor="#e8eef9"
+        android:textSize="14sp"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <!-- Notification body -->
+    <TextView
+        android:id="@+id/widget_body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Abrí Prioria para activar el servicio"
+        android:textColor="#8a8fa8"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:layout_marginTop="2dp" />
+
+    <!-- Footer: app name + time -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/widget_app_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text=""
+            android:textColor="#5a5f72"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/widget_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#5a5f72"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+</LinearLayout>

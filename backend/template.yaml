@@ -545,6 +545,19 @@ Resources:
             Path: /train
             Method: POST
 
+  DeleteNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/notifications/delete.handler
+      Description: Soft-deletes a notification (sets status=deleted).
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /notifications/{id}
+            Method: DELETE
+
 Outputs:
   ApiUrl:
     Description: Base URL for the HTTP API

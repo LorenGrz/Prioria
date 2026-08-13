@@ -14,14 +14,17 @@ export const handler = async (event) => {
         TableName: TABLES.notifications,
         IndexName: 'byCreatedAt',
         KeyConditionExpression: 'userId = :u',
-        ExpressionAttributeValues: { ':u': userId },
+        ExpressionAttributeValues: {
+          ':u': userId,
+          ':deleted': 'deleted',
+          ...(status ? { ':status': status } : {}),
+        },
+        ExpressionAttributeNames: { '#s': 'status' },
+        FilterExpression: status
+          ? '#s = :status'
+          : '#s <> :deleted',
         ScanIndexForward: false,
         Limit: 50,
-        ...(status && {
-          FilterExpression: '#s = :status',
-          ExpressionAttributeNames: { '#s': 'status' },
-          ExpressionAttributeValues: { ':u': userId, ':status': status },
-        }),
       })
     );
 

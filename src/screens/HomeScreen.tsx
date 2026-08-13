@@ -1,29 +1,52 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import TopAppBar from '../components/TopAppBar';
 import Icon from '../components/Icon';
 import { useTheme } from '../context/ThemeContext';
+import { useNotifications, type NotifPriority } from '../context/NotificationContext';
+
+function timeAgo(date: Date): string {
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diff < 60) return 'ahora';
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)}min`;
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)}h`;
+  return `hace ${Math.floor(diff / 86400)}d`;
+}
+
+const PRIORITY_STYLE: Record<
+  NonNullable<NotifPriority>,
+  { label: string; bg: string; text: string }
+> = {
+  critica: { label: 'Crítica', bg: '#fef2f2', text: '#dc2626' },
+  aviso:   { label: 'Aviso',   bg: '#fffbeb', text: '#d97706' },
+  info:    { label: 'Info',    bg: '#f0f9ff', text: '#0284c7' },
+};
 
 export default function HomeScreen() {
-  const [voicePaused, setVoicePaused] = useState(false);
   const { isDark } = useTheme();
+  const { notifications } = useNotifications();
   const iconColor = isDark ? '#c8c4d7' : '#43474e';
 
+  const [voicePaused, setVoicePaused] = useState(false);
+
+  const latest = notifications[0] ?? null;
+  const critCount = notifications.filter((n) => n.priority === 'critica').length;
+  const pendCount = notifications.filter((n) => n.priority === null).length;
+  const serviceActive = notifications.length > 0;
+
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-background dark:bg-train-background">
-      <TopAppBar />
+    <SafeAreaView edges={[]} className="flex-1 bg-background dark:bg-train-background">
       <ScrollView className="flex-1 px-margin-mobile" contentContainerClassName="space-y-lg py-lg">
 
         {/* Status */}
         <View className="flex-row items-center justify-between rounded-xl border border-outline-variant dark:border-train-outline-variant bg-surface-container-low dark:bg-train-surface-container-low p-md">
           <View className="flex-row items-center gap-sm">
-            <View className="h-3 w-3 rounded-full bg-orange-400" />
+            <View className={`h-3 w-3 rounded-full ${serviceActive ? 'bg-green-500' : 'bg-orange-400'}`} />
             <Text className="font-label-lg text-on-surface dark:text-train-on-surface">
-              Servicio de escucha inactivo
+              {serviceActive ? 'Escucha activa' : 'Sin notificaciones aún'}
             </Text>
           </View>
-          <Icon name="bell-sleep-outline" size={20} color={iconColor} />
+          <Icon name={serviceActive ? 'bell-ring-outline' : 'bell-sleep-outline'} size={20} color={iconColor} />
         </View>
 
         {/* Voice toggle */}
@@ -37,20 +60,51 @@ export default function HomeScreen() {
           </Text>
         </Pressable>
 
-        {/* Last notification — empty state */}
+        {/* Last notification */}
         <View>
           <Text className="mb-sm px-1 font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
             Última Notificación
           </Text>
-          <View className="items-center justify-center rounded-xl border border-dashed border-outline-variant dark:border-train-outline-variant bg-surface-container-lowest dark:bg-train-surface-container p-xl">
-            <Icon name="bell-off-outline" size={32} color={iconColor} />
-            <Text className="mt-sm text-center font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
-              Sin notificaciones aún
-            </Text>
-            <Text className="mt-xs text-center text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">
-              Habilitá el acceso en Ajustes → Acceso a notificaciones del sistema
-            </Text>
-          </View>
+          {latest ? (
+            <View className="rounded-xl border border-outline-variant dark:border-train-outline-variant bg-surface-container-low dark:bg-train-surface-container p-md gap-xs">
+              <View className="flex-row items-start justify-between gap-sm">
+                <View className="flex-1">
+                  <Text className="font-label-lg text-on-surface dark:text-train-on-surface" numberOfLines={1}>
+                    {latest.title}
+                  </Text>
+                  <Text className="font-body-md text-on-surface-variant dark:text-train-on-surface-variant" numberOfLines={2}>
+                    {latest.body}
+                  </Text>
+                </View>
+                {latest.priority && (
+                  <View style={{ backgroundColor: PRIORITY_STYLE[latest.priority].bg, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 }}>
+                    <Text style={{ color: PRIORITY_STYLE[latest.priority].text, fontSize: 11, fontWeight: '600' }}>
+                      {PRIORITY_STYLE[latest.priority].label}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View className="flex-row items-center gap-xs">
+                <Text className="text-[11px] text-on-surface-variant dark:text-train-on-surface-variant">
+                  {latest.appName}
+                </Text>
+                <Text className="text-[11px] text-on-surface-variant dark:text-train-on-surface-variant">·</Text>
+                <Text className="text-[11px] text-on-surface-variant dark:text-train-on-surface-variant">
+                  {timeAgo(latest.receivedAt)}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View className="items-center justify-center rounded-xl border border-dashed border-outline-variant dark:border-train-outline-variant bg-surface-container-lowest dark:bg-train-surface-container p-xl">
+              <Icon name="bell-off-outline" size={32} color={iconColor} />
+              <Text className="mt-sm text-center font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
+                Sin notificaciones aún
+              </Text>
+              <Text className="mt-xs text-center text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">
+                Habilitá el acceso en Ajustes → Acceso a notificaciones del sistema
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Daily summary */}
@@ -61,22 +115,28 @@ export default function HomeScreen() {
           <View className="flex-row flex-wrap gap-sm">
             <View className="w-full flex-row items-center justify-between rounded-xl border border-outline-variant dark:border-train-outline-variant bg-surface-container dark:bg-train-surface-container p-md">
               <View>
-                <Text className="font-label-md text-on-surface-variant dark:text-train-on-surface-variant">Ignoradas</Text>
-                <Text className="font-display text-display text-on-surface dark:text-train-on-surface">0</Text>
+                <Text className="font-label-md text-on-surface-variant dark:text-train-on-surface-variant">Total recibidas</Text>
+                <Text className="font-display text-display text-on-surface dark:text-train-on-surface">
+                  {notifications.length}
+                </Text>
               </View>
               <View className="h-12 w-12 items-center justify-center rounded-full bg-surface-container-high dark:bg-train-surface-container-high">
-                <Icon name="bell-off-outline" size={20} color={iconColor} />
+                <Icon name="bell-outline" size={20} color={iconColor} />
               </View>
             </View>
             <View className="flex-1 rounded-xl bg-primary-container dark:bg-train-primary-container p-md">
-              <Icon name="check-circle" size={20} color="#86a0cd" />
-              <Text className="mt-sm text-label-md text-on-primary-container dark:text-train-on-primary-container opacity-80">Leídas</Text>
-              <Text className="font-headline-lg text-on-primary-container dark:text-train-on-primary-container">0</Text>
+              <Icon name="alert-circle-outline" size={20} color="#86a0cd" />
+              <Text className="mt-sm text-label-md text-on-primary-container dark:text-train-on-primary-container opacity-80">Críticas</Text>
+              <Text className="font-headline-lg text-on-primary-container dark:text-train-on-primary-container">
+                {critCount}
+              </Text>
             </View>
             <View className="flex-1 rounded-xl bg-surface-container-highest dark:bg-train-surface-container-highest p-md">
               <Icon name="clock-outline" size={20} color={iconColor} />
-              <Text className="mt-sm text-label-md text-on-surface-variant dark:text-train-on-surface-variant">Pendientes</Text>
-              <Text className="font-headline-lg text-on-surface dark:text-train-on-surface">0</Text>
+              <Text className="mt-sm text-label-md text-on-surface-variant dark:text-train-on-surface-variant">Sin clasificar</Text>
+              <Text className="font-headline-lg text-on-surface dark:text-train-on-surface">
+                {pendCount}
+              </Text>
             </View>
           </View>
         </View>
