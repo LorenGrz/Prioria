@@ -49,10 +49,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          ls -lh "$APK"
+          cp android/app/build/outputs/apk/debug/app-debug.apk prioria.apk
+          ls -lh prioria.apk
           VERSION="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
-          gh release create "$VERSION" "$APK#prioria.apk" \
+          gh release create "$VERSION" prioria.apk \
             --title "Prioria $VERSION" \
             --notes "Build automático desde commit \`$(git rev-parse --short HEAD)\`" \
             --latest
