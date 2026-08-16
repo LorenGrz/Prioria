@@ -1,3 +1,4 @@
 <resources>
   <string name="app_name">Prioria</string>
+  <string name="api_base_url">https://8lmjsd9rc9.execute-api.us-east-1.amazonaws.com/dev</string>
 </resources>

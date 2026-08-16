@@ -61,6 +61,13 @@ class NotificationModule(private val reactContext: ReactApplicationContext) :
         )
     }
 
+    // Persists the Cognito JWT to SharedPreferences so PrioriaFcmService can read it
+    @ReactMethod
+    fun saveAuthToken(token: String) {
+        reactContext.getSharedPreferences("prioria_auth", android.content.Context.MODE_PRIVATE)
+            .edit().putString("cognito_token", token).apply()
+    }
+
     @ReactMethod fun addListener(eventName: String) {}
     @ReactMethod fun removeListeners(count: Int) {}
 

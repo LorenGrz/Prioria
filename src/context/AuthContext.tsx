@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   AuthenticationDetails,
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const jwt = await signIn();
       const expiry = Date.now() + 55 * 60 * 1000; // 55 min (token valid for 1h)
       await AsyncStorage.multiSet([[TOKEN_KEY, jwt], [EXPIRY_KEY, String(expiry)]]);
+      NativeModules.NotificationModule?.saveAuthToken?.(jwt);
       setToken(jwt);
       // Auto-refresh before expiry
       if (refreshTimer.current) clearTimeout(refreshTimer.current);

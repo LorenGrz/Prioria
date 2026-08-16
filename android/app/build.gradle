@@ -1,6 +1,9 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+if (file("google-services.json").exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
@@ -178,5 +181,9 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+
+    if (file("google-services.json").exists()) {
+        implementation 'com.google.firebase:firebase-messaging:24.1.0'
     }
 }
