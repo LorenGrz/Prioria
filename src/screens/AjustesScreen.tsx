@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import * as Speech from 'expo-speech';
 import Constants from 'expo-constants';
@@ -6,6 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import Icon from '../components/Icon';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { apiCall } from '../services/api';
 
 const VOICES = [
   { id: 'lucia', name: 'Lucía', locale: 'Español (España)', icon: 'face-woman' as const },
@@ -38,9 +40,31 @@ function SectionTitle({ label, isDark }: { label: string; isDark: boolean }) {
 
 export default function AjustesScreen() {
   const { isDark, toggleTheme } = useTheme();
+  const { token } = useAuth();
   const [voiceId, setVoiceId] = useState('lucia');
   const [speed, setSpeed] = useState(1.0);
   const [testing, setTesting] = useState(false);
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load voice preferences from backend on mount
+  useEffect(() => {
+    if (!token) return;
+    apiCall<{ voice?: { voiceId?: string; speed?: number } }>('/preferences', 'GET', undefined, token)
+      .then((prefs) => {
+        if (prefs.voice?.voiceId) setVoiceId(prefs.voice.voiceId);
+        if (prefs.voice?.speed != null) setSpeed(prefs.voice.speed);
+      })
+      .catch(() => {});
+  }, [token]);
+
+  function scheduleVoiceSave(vid: string, spd: number) {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (!token) return;
+      apiCall('/preferences', 'PUT', { voice: { voiceId: vid, speed: spd, language: 'es-ES' } }, token).catch(() => {});
+    }, 1500);
+  }
 
   const [permStatus, setPermStatus] = useState<PermStatus | null>(null);
   const [lastNotifId, setLastNotifId] = useState<string | null>(null);
@@ -171,7 +195,7 @@ export default function AjustesScreen() {
               return (
                 <Pressable
                   key={voice.id}
-                  onPress={() => setVoiceId(voice.id)}
+                  onPress={() => { setVoiceId(voice.id); scheduleVoiceSave(voice.id, speed); }}
                   className={`flex-row items-center justify-between rounded-lg border p-sm ${
                     active
                       ? 'border-outline dark:border-train-outline bg-surface-container-low dark:bg-train-surface-container-low'
@@ -231,7 +255,9 @@ export default function AjustesScreen() {
           <View className="px-sm py-md">
             <Slider
               minimumValue={0.5} maximumValue={2.0} step={0.1}
-              value={speed} onValueChange={setSpeed}
+              value={speed}
+              onValueChange={setSpeed}
+              onSlidingComplete={(s) => scheduleVoiceSave(voiceId, s)}
               minimumTrackTintColor={trackMin}
               maximumTrackTintColor={trackMax}
               thumbTintColor={thumbColor}

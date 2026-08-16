@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { DeviceEventEmitter, Platform } from 'react-native';
+import * as Speech from 'expo-speech';
 import { useAuth } from './AuthContext';
 import { apiCall } from '../services/api';
 
@@ -16,6 +17,7 @@ export type NotifEntry = {
   source: 'local' | 'system';
   priority: NotifPriority;
   priorityScore: number | null;
+  autoRead?: boolean;
 };
 
 type NotifContextValue = {
@@ -23,6 +25,8 @@ type NotifContextValue = {
   clearAll: () => void;
   updatePriority: (id: string, priority: NotifPriority) => void;
   removeNotification: (id: string) => void;
+  markOpened: (id: string) => void;
+  boostPriority: (id: string) => void;
 };
 
 const CRITICA_KEYWORDS = [
@@ -44,13 +48,13 @@ function scoreLocally(title: string, body: string): NotifPriority {
   return 'info';
 }
 
-// Map backend notification record → NotifEntry
+const LABEL_MAP: Record<string, NotifPriority> = {
+  critica: 'critica',
+  aviso: 'aviso',
+  info: 'info',
+};
+
 function fromBackend(item: Record<string, unknown>): NotifEntry {
-  const labelMap: Record<string, NotifPriority> = {
-    critica: 'critica',
-    aviso: 'aviso',
-    info: 'info',
-  };
   return {
     id: (item.notificationId as string) ?? String(Date.now()),
     backendId: item.notificationId as string,
@@ -60,8 +64,9 @@ function fromBackend(item: Record<string, unknown>): NotifEntry {
     packageName: (item.sourceApp as string) ?? '',
     receivedAt: new Date((item.createdAt as string) ?? Date.now()),
     source: 'system',
-    priority: labelMap[(item.priorityLabel as string)] ?? null,
+    priority: LABEL_MAP[(item.priorityLabel as string)] ?? null,
     priorityScore: (item.priorityScore as number) ?? null,
+    autoRead: Boolean(item.autoRead),
   };
 }
 
@@ -70,13 +75,32 @@ const NotifContext = createContext<NotifContextValue>({
   clearAll: () => {},
   updatePriority: () => {},
   removeNotification: () => {},
+  markOpened: () => {},
+  boostPriority: () => {},
 });
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<NotifEntry[]>([]);
   const { token, isAuthReady } = useAuth();
+
   const tokenRef = useRef(token);
   useEffect(() => { tokenRef.current = token; }, [token]);
+
+  // Stable ref to current notifications — avoids stale closures in callbacks
+  const notificationsRef = useRef<NotifEntry[]>([]);
+  useEffect(() => { notificationsRef.current = notifications; }, [notifications]);
+
+  // TTS: fire when the agent upgrades a notification to critica + autoRead
+  const prevPriorityRef = useRef<Map<string, NotifPriority>>(new Map());
+  useEffect(() => {
+    for (const n of notifications) {
+      const prev = prevPriorityRef.current.get(n.id);
+      if (prev !== undefined && prev !== 'critica' && n.priority === 'critica' && n.autoRead) {
+        Speech.speak(`${n.title}. ${n.body}`, { language: 'es-ES', rate: 1.0 });
+      }
+    }
+    prevPriorityRef.current = new Map(notifications.map((n) => [n.id, n.priority]));
+  }, [notifications]);
 
   // Load history from backend on startup
   useEffect(() => {
@@ -90,32 +114,72 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       .catch((err) => console.warn('[NotifContext] GET /notifications failed:', err));
   }, [isAuthReady, token]);
 
-  // Listen for live notifications
+  // Merge agent verdicts from backend into local state (called after ingest delay)
+  const refreshFromBackend = () => {
+    const t = tokenRef.current;
+    if (!t) return;
+    apiCall<{ items: Record<string, unknown>[] }>('/notifications', 'GET', undefined, t)
+      .then((data) => {
+        if (!Array.isArray(data?.items)) return;
+        const byBackendId = new Map(
+          data.items.map((item) => [item.notificationId as string, item])
+        );
+        setNotifications((prev) =>
+          prev.map((n) => {
+            if (!n.backendId) return n;
+            const remote = byBackendId.get(n.backendId);
+            if (!remote || remote.priorityScore == null) return n;
+            const newPriority = LABEL_MAP[remote.priorityLabel as string] ?? n.priority;
+            const newScore = Number(remote.priorityScore);
+            if (newPriority === n.priority && newScore === n.priorityScore) return n;
+            return {
+              ...n,
+              priority: newPriority,
+              priorityScore: newScore,
+              autoRead: Boolean(remote.autoRead),
+            };
+          })
+        );
+      })
+      .catch(() => {});
+  };
+
+  // Listen for live notifications from the system and from local Expo pushes
   useEffect(() => {
     if (Platform.OS !== 'android') return;
 
     const addEntry = (entry: NotifEntry) => {
       setNotifications((prev) => [entry, ...prev]);
-      // Fire-and-forget to backend
       const t = tokenRef.current;
-      if (t) {
-        apiCall<{ notificationId: string }>('/notifications', 'POST', {
-          title: entry.title,
-          body: entry.body,
-          sourceApp: entry.packageName || entry.appName,
-        }, t).then((data) => {
+      if (!t) return;
+      apiCall<{ notificationId: string }>('/notifications', 'POST', {
+        title: entry.title,
+        body: entry.body,
+        sourceApp: entry.packageName || entry.appName,
+      }, t)
+        .then((data) => {
           if (data?.notificationId) {
             setNotifications((prev) =>
-              prev.map((n) => n.id === entry.id ? { ...n, backendId: data.notificationId } : n)
+              prev.map((n) =>
+                n.id === entry.id ? { ...n, backendId: data.notificationId } : n
+              )
             );
+            // Pick up agent verdict after async SQS processing (~5-8s)
+            setTimeout(refreshFromBackend, 8000);
           }
-        }).catch(() => {});
-      }
+        })
+        .catch(() => {});
     };
 
     const systemSub = DeviceEventEmitter.addListener(
       'onSystemNotificationReceived',
-      (event: { packageName: string; appName: string; title: string; body: string; timestamp: number }) => {
+      (event: {
+        packageName: string;
+        appName: string;
+        title: string;
+        body: string;
+        timestamp: number;
+      }) => {
         addEntry({
           id: `${event.packageName}-${event.timestamp}`,
           title: event.title,
@@ -130,7 +194,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       }
     );
 
-    let localSub: any = null;
+    let localSub: ReturnType<Awaited<typeof import('expo-notifications')>['addNotificationReceivedListener']> | null = null;
     import('expo-notifications').then((N) => {
       localSub = N.addNotificationReceivedListener((notification) => {
         const { title, body } = notification.request.content;
@@ -162,17 +226,31 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, priority } : n))
     );
-    // Post feedback to backend
-    const entry = notifications.find((n) => n.id === id);
+    const entry = notificationsRef.current.find((n) => n.id === id);
     const t = tokenRef.current;
-    if (entry?.backendId && t) {
-      const feedback = priority === 'info' ? 'down' : 'up';
-      apiCall(`/notifications/${entry.backendId}/feedback`, 'POST', { feedback }, t).catch(() => {});
-    }
+    if (!entry?.backendId || !t) return;
+    const feedback = priority === 'info' ? 'down' : 'up';
+    apiCall<Record<string, unknown>>(
+      `/notifications/${entry.backendId}/feedback`,
+      'POST',
+      { feedback },
+      t
+    )
+      .then((attrs) => {
+        if (attrs?.priorityScore == null) return;
+        const newScore = Number(attrs.priorityScore);
+        const newPriority = LABEL_MAP[attrs.priorityLabel as string] ?? priority;
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === id ? { ...n, priorityScore: newScore, priority: newPriority } : n
+          )
+        );
+      })
+      .catch(() => {});
   };
 
   const removeNotification = (id: string) => {
-    const entry = notifications.find((n) => n.id === id);
+    const entry = notificationsRef.current.find((n) => n.id === id);
     setNotifications((prev) => prev.filter((n) => n.id !== id));
     const t = tokenRef.current;
     if (entry?.backendId && t) {
@@ -180,8 +258,43 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  // Weak signal: records that the user opened/read the notification
+  const markOpened = (id: string) => {
+    const entry = notificationsRef.current.find((n) => n.id === id);
+    const t = tokenRef.current;
+    if (entry?.backendId && t) {
+      apiCall(`/notifications/${entry.backendId}/open`, 'POST', undefined, t).catch(() => {});
+    }
+  };
+
+  // Medium signal: user explicitly interacted → bumps priorityScore in DB
+  const boostPriority = (id: string) => {
+    const entry = notificationsRef.current.find((n) => n.id === id);
+    const t = tokenRef.current;
+    if (!entry?.backendId || !t) return;
+    apiCall<Record<string, unknown>>(
+      `/notifications/${entry.backendId}/boost`,
+      'POST',
+      undefined,
+      t
+    )
+      .then((attrs) => {
+        if (attrs?.priorityScore == null) return;
+        const newScore = Number(attrs.priorityScore);
+        const newPriority = LABEL_MAP[attrs.priorityLabel as string] ?? entry.priority;
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === id ? { ...n, priorityScore: newScore, priority: newPriority } : n
+          )
+        );
+      })
+      .catch(() => {});
+  };
+
   return (
-    <NotifContext.Provider value={{ notifications, clearAll, updatePriority, removeNotification }}>
+    <NotifContext.Provider
+      value={{ notifications, clearAll, updatePriority, removeNotification, markOpened, boostPriority }}
+    >
       {children}
     </NotifContext.Provider>
   );

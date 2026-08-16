@@ -23,14 +23,15 @@ const PRIORITY_CHIPS: PriorityChip[] = [
 ];
 
 function NotifCard({ item }: { item: NotifEntry }) {
-  const { updatePriority, removeNotification } = useNotifications();
+  const { updatePriority, removeNotification, boostPriority } = useNotifications();
   const { isDark } = useTheme();
   const iconColor = isDark ? '#928ea0' : '#74777f';
   const cardBg = isDark ? '#1a2123' : '#ffffff';
 
   return (
-    <View
-      className="rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
+    <Pressable
+      onPress={() => boostPriority(item.id)}
+      className="rounded-xl border border-outline-variant dark:border-train-outline-variant p-md active:opacity-80"
       style={{ backgroundColor: cardBg }}
     >
       {/* Header row */}
@@ -95,7 +96,7 @@ function NotifCard({ item }: { item: NotifEntry }) {
           );
         })}
       </View>
-    </View>
+    </Pressable>
   );
 }
 

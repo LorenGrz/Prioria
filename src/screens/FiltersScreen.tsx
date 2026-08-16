@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
-import TopAppBar from '../components/TopAppBar';
 import Icon from '../components/Icon';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { apiCall } from '../services/api';
 
 type Category = {
   key: string;
@@ -30,6 +31,35 @@ export default function FiltersScreen() {
   });
   const [threshold, setThreshold] = useState<'critico' | 'todo'>('critico');
   const { isDark } = useTheme();
+  const { token } = useAuth();
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load preferences from backend on mount
+  useEffect(() => {
+    if (!token) return;
+    apiCall<{
+      sensitivity?: number;
+      categories?: Record<string, boolean>;
+      autoReadMode?: string;
+    }>('/preferences', 'GET', undefined, token)
+      .then((prefs) => {
+        if (prefs.sensitivity != null) setSensitivity(prefs.sensitivity);
+        if (prefs.categories) setEnabled(prefs.categories);
+        if (prefs.autoReadMode === 'critico' || prefs.autoReadMode === 'todo') {
+          setThreshold(prefs.autoReadMode);
+        }
+      })
+      .catch(() => {});
+  }, [token]);
+
+  function scheduleSave(patch: Record<string, unknown>) {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (!token) return;
+      apiCall('/preferences', 'PUT', patch, token).catch(() => {});
+    }, 1500);
+  }
 
   const cardBg    = isDark ? '#1a2123' : '#ffffff';
   const trackMin  = isDark ? '#c6bfff' : '#002045';
@@ -37,8 +67,7 @@ export default function FiltersScreen() {
   const thumbColor = isDark ? '#c6bfff' : '#002045';
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-background dark:bg-train-background">
-      <TopAppBar />
+    <SafeAreaView edges={[]} className="flex-1 bg-background dark:bg-train-background">
       <ScrollView className="flex-1 px-margin-mobile" contentContainerClassName="pb-xl pt-md">
         <View className="mb-lg">
           <Text className="mb-xs font-headline-lg-mobile text-primary dark:text-train-primary">
@@ -62,7 +91,9 @@ export default function FiltersScreen() {
           </View>
           <Slider
             minimumValue={0} maximumValue={100}
-            value={sensitivity} onValueChange={setSensitivity}
+            value={sensitivity}
+            onValueChange={setSensitivity}
+            onSlidingComplete={(v) => scheduleSave({ sensitivity: Math.round(v) })}
             minimumTrackTintColor={trackMin}
             maximumTrackTintColor={trackMax}
             thumbTintColor={thumbColor}
@@ -95,7 +126,11 @@ export default function FiltersScreen() {
                   />
                   <Switch
                     value={enabled[cat.key]}
-                    onValueChange={(v) => setEnabled((prev) => ({ ...prev, [cat.key]: v }))}
+                    onValueChange={(v) => {
+                      const next = { ...enabled, [cat.key]: v };
+                      setEnabled(next);
+                      scheduleSave({ categories: next });
+                    }}
                     trackColor={{ false: isDark ? '#2f3638' : '#dae2fd', true: isDark ? '#6c5ce7' : '#002045' }}
                     thumbColor="#ffffff"
                   />
@@ -120,7 +155,10 @@ export default function FiltersScreen() {
               return (
                 <Pressable
                   key={opt.key}
-                  onPress={() => setThreshold(opt.key)}
+                  onPress={() => {
+                    setThreshold(opt.key);
+                    scheduleSave({ autoReadMode: opt.key });
+                  }}
                   className={`flex-row items-center justify-between rounded-xl border p-md ${
                     active
                       ? 'border-primary dark:border-train-primary bg-surface-container-high dark:bg-train-surface-container-high'

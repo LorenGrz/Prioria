@@ -1,27 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TopAppBar from '../components/TopAppBar';
 import Icon from '../components/Icon';
 
-type PermissionStatus = 'granted' | 'denied' | 'undetermined';
+type PermStatus = 'granted' | 'denied' | 'undetermined' | 'unavailable';
 
-function StatusBadge({ status }: { status: PermissionStatus | null }) {
+function StatusBadge({ status }: { status: PermStatus | null }) {
   if (!status) return null;
-  const config = {
+  const config: Record<PermStatus, { bg: string; text: string; label: string }> = {
     granted: { bg: 'bg-green-100', text: 'text-green-800', label: 'Concedido' },
     denied: { bg: 'bg-error-container', text: 'text-on-error-container', label: 'Denegado' },
     undetermined: { bg: 'bg-surface-container', text: 'text-on-surface-variant', label: 'Sin definir' },
-  }[status];
+    unavailable: { bg: 'bg-surface-container-highest', text: 'text-on-surface-variant', label: 'No disponible' },
+  };
+  const c = config[status];
   return (
-    <View className={`rounded-full px-sm py-0.5 ${config.bg}`}>
-      <Text className={`text-[11px] font-bold ${config.text}`}>{config.label}</Text>
+    <View className={`rounded-full px-sm py-0.5 ${c.bg}`}>
+      <Text className={`text-[11px] font-bold ${c.text}`}>{c.label}</Text>
     </View>
   );
 }
 
-function SectionCard({ children }: { children: React.ReactNode }) {
+function Card({ children }: { children: React.ReactNode }) {
   return (
     <View className="rounded-xl border border-outline-variant bg-surface-container-low p-md space-y-sm">
       {children}
@@ -29,82 +30,83 @@ function SectionCard({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ActionButton({
-  onPress,
-  icon,
-  label,
-  variant = 'primary',
-}: {
-  onPress: () => void;
-  icon: string;
-  label: string;
-  variant?: 'primary' | 'outline';
-}) {
+function Btn({
+  onPress, icon, label, variant = 'primary',
+}: { onPress: () => void; icon: string; label: string; variant?: 'primary' | 'outline' }) {
   const base = 'h-touch-target-min flex-row items-center justify-center gap-sm rounded-xl active:opacity-80';
-  const style =
-    variant === 'primary'
-      ? `${base} bg-primary`
-      : `${base} border border-primary bg-transparent`;
-  const textStyle = variant === 'primary' ? 'font-label-lg text-on-primary' : 'font-label-lg text-primary';
-  const iconColor = variant === 'primary' ? '#ffffff' : '#86a0cd';
   return (
-    <Pressable onPress={onPress} className={style}>
-      <Icon name={icon as any} size={18} color={iconColor} />
-      <Text className={textStyle}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      className={variant === 'primary' ? `${base} bg-primary` : `${base} border border-primary`}
+    >
+      <Icon name={icon as any} size={18} color={variant === 'primary' ? '#ffffff' : '#86a0cd'} />
+      <Text className={variant === 'primary' ? 'font-label-lg text-on-primary' : 'font-label-lg text-primary'}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
 export default function TestScreen() {
-  const [pushPermission, setPushPermission] = useState<PermissionStatus | null>(null);
-  const [pushToken, setPushToken] = useState<string | null>(null);
-  const [lastNotif, setLastNotif] = useState<string | null>(null);
+  const [permStatus, setPermStatus] = useState<PermStatus | null>(null);
+  const [lastNotifId, setLastNotifId] = useState<string | null>(null);
+  const [tokenMsg, setTokenMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkPermissions();
-  }, []);
-
-  async function checkPermissions() {
-    const { status } = await Notifications.getPermissionsAsync();
-    setPushPermission(status as PermissionStatus);
+  async function checkPermission() {
+    try {
+      const Notif = await import('expo-notifications');
+      const { status } = await Notif.getPermissionsAsync();
+      setPermStatus(status as PermStatus);
+    } catch {
+      setPermStatus('unavailable');
+    }
   }
 
-  async function requestPermissions() {
-    const { status } = await Notifications.requestPermissionsAsync();
-    setPushPermission(status as PermissionStatus);
-    if (status === 'granted') {
-      await fetchToken();
+  async function requestPermission() {
+    try {
+      const Notif = await import('expo-notifications');
+      const { status } = await Notif.requestPermissionsAsync();
+      setPermStatus(status as PermStatus);
+    } catch {
+      setPermStatus('unavailable');
+      Alert.alert('No disponible', 'Los permisos de notificación no están disponibles en Expo Go. Usá el APK descargado desde EAS.');
+    }
+  }
+
+  async function sendLocal() {
+    try {
+      const Notif = await import('expo-notifications');
+      Notif.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+      const id = await Notif.scheduleNotificationAsync({
+        content: {
+          title: 'Prioria — Prueba',
+          body: 'Notificación de prueba enviada correctamente.',
+        },
+        trigger: { type: Notif.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 3 },
+      });
+      setLastNotifId(id.slice(0, 20) + '…');
+      Alert.alert('Enviada', 'Aparece en 3 segundos.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'No disponible en Expo Go. Usá el APK de EAS.');
     }
   }
 
   async function fetchToken() {
     try {
-      const token = await Notifications.getExpoPushTokenAsync();
-      setPushToken(token.data);
+      const Notif = await import('expo-notifications');
+      const { data } = await Notif.getExpoPushTokenAsync();
+      setTokenMsg(data);
     } catch {
-      setPushToken('No disponible (requiere build de producción)');
+      setTokenMsg('Requiere development build — no disponible en Expo Go.');
     }
-  }
-
-  async function sendLocalNotification() {
-    if (pushPermission !== 'granted') {
-      Alert.alert('Permiso requerido', 'Primero concede el permiso de notificaciones.');
-      return;
-    }
-    const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Prioria — Prueba',
-        body: 'Notificación de prueba enviada correctamente.',
-        data: { test: true },
-      },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 3 },
-    });
-    setLastNotif(id);
-    Alert.alert('Enviada', 'La notificación aparece en 3 segundos.');
-  }
-
-  function openNotificationListenerSettings() {
-    Linking.openSettings();
   }
 
   return (
@@ -112,97 +114,63 @@ export default function TestScreen() {
       <TopAppBar />
       <ScrollView className="flex-1 px-margin-mobile" contentContainerClassName="space-y-lg py-lg">
 
-        {/* Push permission */}
-        <SectionCard>
+        <Card>
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center gap-sm">
               <Icon name="bell-ring-outline" size={20} color="#43474e" />
               <Text className="font-label-lg text-on-surface">Permiso de notificaciones</Text>
             </View>
-            <StatusBadge status={pushPermission} />
+            <StatusBadge status={permStatus} />
           </View>
           <View className="flex-row gap-sm pt-xs">
             <View className="flex-1">
-              <ActionButton
-                onPress={requestPermissions}
-                icon="bell-plus-outline"
-                label="Solicitar permiso"
-              />
+              <Btn onPress={requestPermission} icon="bell-plus-outline" label="Solicitar" />
             </View>
             <View className="flex-1">
-              <ActionButton
-                onPress={checkPermissions}
-                icon="refresh"
-                label="Actualizar"
-                variant="outline"
-              />
+              <Btn onPress={checkPermission} icon="refresh" label="Verificar" variant="outline" />
             </View>
           </View>
-        </SectionCard>
+        </Card>
 
-        {/* Local notification */}
-        <SectionCard>
+        <Card>
           <View className="flex-row items-center gap-sm">
             <Icon name="bell-outline" size={20} color="#43474e" />
             <Text className="font-label-lg text-on-surface">Notificación local de prueba</Text>
           </View>
           <Text className="text-body-sm text-on-surface-variant">
-            Dispara una notificación local en 3 segundos para verificar que el sistema de notificaciones funciona.
+            Dispara una notificación local en 3 segundos.
           </Text>
-          <ActionButton
-            onPress={sendLocalNotification}
-            icon="send-outline"
-            label="Enviar en 3 s"
-          />
-          {lastNotif && (
-            <Text className="text-body-sm text-on-surface-variant">
-              Última ID: {lastNotif.slice(0, 24)}…
-            </Text>
+          <Btn onPress={sendLocal} icon="send-outline" label="Enviar en 3 s" />
+          {lastNotifId && (
+            <Text className="text-body-sm text-on-surface-variant">ID: {lastNotifId}</Text>
           )}
-        </SectionCard>
+        </Card>
 
-        {/* Expo push token */}
-        <SectionCard>
+        <Card>
           <View className="flex-row items-center gap-sm">
             <Icon name="identifier" size={20} color="#43474e" />
             <Text className="font-label-lg text-on-surface">Token Expo Push</Text>
           </View>
-          {pushToken ? (
+          {tokenMsg ? (
             <View className="rounded-lg bg-surface-container-highest p-sm">
-              <Text className="text-body-sm font-mono text-on-surface" selectable>
-                {pushToken}
-              </Text>
+              <Text className="text-body-sm text-on-surface" selectable>{tokenMsg}</Text>
             </View>
           ) : (
-            <Text className="text-body-sm text-on-surface-variant">
-              Sin token. Solicita el permiso primero.
-            </Text>
+            <Text className="text-body-sm text-on-surface-variant">Sin token.</Text>
           )}
-          <ActionButton
-            onPress={fetchToken}
-            icon="key-outline"
-            label="Obtener token"
-            variant="outline"
-          />
-        </SectionCard>
+          <Btn onPress={fetchToken} icon="key-outline" label="Obtener token" variant="outline" />
+        </Card>
 
-        {/* NotificationListenerService */}
-        <SectionCard>
+        <Card>
           <View className="flex-row items-center gap-sm">
             <Icon name="shield-key-outline" size={20} color="#43474e" />
             <Text className="font-label-lg text-on-surface">Acceso a notificaciones del sistema</Text>
           </View>
           <Text className="text-body-sm text-on-surface-variant">
-            Abre los ajustes de Android para habilitar el acceso a las notificaciones de otras apps
-            (requerido por NotificationListenerService).
+            Abre los ajustes de Android para habilitar NotificationListenerService.
           </Text>
-          <ActionButton
-            onPress={openNotificationListenerSettings}
-            icon="cog-outline"
-            label="Abrir ajustes"
-            variant="outline"
-          />
-        </SectionCard>
+          <Btn onPress={Linking.openSettings} icon="cog-outline" label="Abrir ajustes" variant="outline" />
+        </Card>
 
       </ScrollView>
     </SafeAreaView>

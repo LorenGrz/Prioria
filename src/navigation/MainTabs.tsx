@@ -6,8 +6,7 @@ import HomeScreen from '../screens/HomeScreen';
 import FiltersScreen from '../screens/FiltersScreen';
 import TrainScreen from '../screens/TrainScreen';
 import HistoryScreen from '../screens/HistoryScreen';
-import VoiceScreen from '../screens/VoiceScreen';
-import TestScreen from '../screens/TestScreen';
+import AjustesScreen from '../screens/AjustesScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -16,8 +15,7 @@ const TAB_ICONS: Record<keyof MainTabParamList, IconProps['name']> = {
   Filtros: 'tune',
   Entrenar: 'forum-outline',
   Historial: 'history',
-  Voz: 'microphone-outline',
-  Prueba: 'bell-cog-outline',
+  Ajustes: 'cog-outline',
 };
 
 function TabIcon({ focused, routeName }: { focused: boolean; routeName: keyof MainTabParamList }) {
@@ -60,8 +58,7 @@ export default function MainTabs() {
       <Tab.Screen name="Filtros" component={FiltersScreen} />
       <Tab.Screen name="Entrenar" component={TrainScreen} />
       <Tab.Screen name="Historial" component={HistoryScreen} />
-      <Tab.Screen name="Voz" component={VoiceScreen} />
-      <Tab.Screen name="Prueba" component={TestScreen} />
+      <Tab.Screen name="Ajustes" component={AjustesScreen} />
     </Tab.Navigator>
   );
 }
