@@ -116,21 +116,36 @@ aws s3 sync out/ s3://prioria-landing-493735739644 --delete
 aws cloudfront create-invalidation --distribution-id E27GXNA3NNHD70 --paths "/*"
 ```
 
-## Estado actual
+## Estado actual (2026-08-16)
 - [x] Scaffold Expo + push a GitHub (LorenGrz/Prioria)
-- [x] NativeWind instalado y configurado (babel.config.js, metro.config.js, global.css, nativewind-env.d.ts)
-- [x] Tokens de diseño portados a tailwind.config.js (paleta light + `train-*` para Entrenar, spacing, borderRadius, fontFamily, fontSize — normalicé algunas inconsistencias menores entre mockups, ej. headline-lg-mobile)
-- [x] Fuentes: Plus Jakarta Sans + Atkinson Hyperlegible Next vía @expo-google-fonts, cargadas en App.tsx con gate de splash screen
-- [x] Navegación: RootNavigator (stack Onboarding→Main) + MainTabs (5 tabs con pill activo estilo mockup)
-- [x] Las 6 pantallas construidas en src/screens/, interactivas (useState local, sin backend conectado todavía)
-- [x] tsc --noEmit limpio (tsconfig.json de la raíz excluye /backend y /landing a propósito, cada uno tiene su propio toolchain); sanity build con Metro no se pudo correr completo en este sandbox (permisos de escritura en la carpeta `dist` del mount de Windows) — falta correr `expo start` real en la máquina del usuario para probar en dispositivo/emulador
-- [x] Backend AWS scaffolded en /backend: template.yaml (SAM) con Cognito, 3 tablas DynamoDB (Users/Notifications/Rules), 2 colas SQS (notifications + push, con DLQ), HTTP API con Cognito authorizer, ~10 Lambdas. Válido según cfn-lint (0 errores, solo warning de runtime ya corregido a nodejs24.x). Falta: `sam deploy` real (requiere cuenta AWS, acceso a modelo Bedrock habilitado, secret de FCM en Secrets Manager) — ver `backend/README.md` para los comandos exactos y qué parámetros pasar (`FcmServiceAccountSecretArn`, `FcmProjectId`)
-- [x] Landing en /landing: Next.js 16 + Tailwind, hero + galería de 3 phone-frames (Inicio/Historial/Entrenar) + features + stack + footer. Build y export estático verificados (npm install + next build corrieron limpio, `out/` generado, 848K)
-- [ ] Theming claro/oscuro a nivel de sistema operativo (fuera de scope por ahora — solo Entrenar tiene paleta fija distinta)
-- [ ] Conectar la app RN al backend real — falta cliente de Cognito (SRP, ej. `amazon-cognito-identity-js` o Amplify Auth), capa de API para llamar a los endpoints de `/backend`, y reemplazar el estado local mockeado de cada pantalla
-- [ ] NotificationListenerService nativo (requiere dev build, no Expo Go — módulo Kotlin que escucha notificaciones y las postea a `POST /notifications`)
-- [ ] Widget de Android (consumir el push de FCM que el backend ya manda; el widget en sí no está construido)
-- [ ] Retraining real con el historial de feedback (hoy el agente solo lee RulesTable como contexto fuerte; feedback/open/boost quedan guardados en NotificationsTable pero no se re-inyectan al prompt todavía — ver nota en `backend/README.md`)
+- [x] NativeWind + fuentes + navegación (5 tabs, pill activo)
+- [x] 6 pantallas (Onboarding, Inicio, Filtros, Historial, Entrenar, Ajustes)
+- [x] Backend AWS desplegado (`prioria-dev`, us-east-1)
+- [x] Cognito auth (SRP desde la app, token en AsyncStorage, auto-refresh)
+- [x] NotificationListenerService nativo (Kotlin) → DeviceEventEmitter → NotificationContext
+- [x] Widget Android (PrioriaWidgetProvider) — layout, local scoring, push inmediato
+- [x] Backend conectado: POST /notifications (ingest) → SQS → agente Bedrock → DynamoDB
+- [x] FiltersScreen → GET/PUT /preferences (sensibilidad, categorías, umbral)
+- [x] Historial: priority chips → POST /feedback (±15 pts, sincroniza score local)
+- [x] Historial: tap card → POST /boost (+8 pts en DynamoDB, actualiza score en UI)
+- [x] 8s delayed refresh → agente verdict → actualiza prioridad + score en UI + widget
+- [x] TTS automática: expo-speech lee en voz alta cuando agente clasifica como critica + autoRead
+- [x] Ajustes: voice settings → GET/PUT /preferences (voiceId, speed)
+- [x] Ajustes: "Probar con Amazon Polly" → POST /voice/synthesize → expo-audio (fallback a expo-speech)
+- [x] Widget tap → onNewIntent(PRIORIA_WIDGET_BOOST) → sendBoostEvent → boostPriority en RN
+- [x] Landing desplegada en CloudFront (https://d1c6xk2jegfebf.cloudfront.net)
+
+## Pendiente
+- [ ] FCM push completo (widget update desde backend cuando app está cerrada):
+  ver instrucciones en PrioriaFcmService.kt — requiere:
+  1. Firebase project + google-services.json en android/app/
+  2. Descomentar PrioriaFcmService.kt y agregar Firebase SDK a build.gradle
+  3. FcmServiceAccountSecretArn + FcmProjectId en AWS (sam deploy)
+  4. FCM token registration: llamar Notifications.getDevicePushTokenAsync() en App.tsx
+     y POST al endpoint /devices/register con el token raw + Cognito JWT
+- [ ] Polly TTS automática para notificaciones críticas (usa expo-speech hoy como fallback;
+     para Polly real necesita voice preferences en el contexto, no solo en AjustesScreen)
+- [ ] Theming sistema operativo (claro/oscuro — solo Entrenar tiene paleta fija hoy)
 
 ## Notas técnicas
 - Mapeo de íconos: mockups usan Material Symbols (web), RN usa `MaterialCommunityIcons` de @expo/vector-icons — hay un mapeo manual en `src/components/Icon.tsx` y por pantalla, verificado contra el glyph map real del paquete instalado (no debería haber íconos en blanco). Si se agregan pantallas nuevas, correr el mismo tipo de chequeo contra `node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/MaterialCommunityIcons.json` antes de asumir que un nombre de ícono existe.

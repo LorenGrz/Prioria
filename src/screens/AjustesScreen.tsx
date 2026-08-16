@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import * as Speech from 'expo-speech';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
@@ -47,6 +48,15 @@ export default function AjustesScreen() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // expo-audio player for Polly TTS (initialized with no source; source loaded on demand)
+  const pollyPlayer = useAudioPlayer('');
+  const pollyStatus = useAudioPlayerStatus(pollyPlayer);
+
+  // Detect Polly playback completion
+  useEffect(() => {
+    if (pollyStatus.didJustFinish) setTesting(false);
+  }, [pollyStatus.didJustFinish]);
+
   // Load voice preferences from backend on mount
   useEffect(() => {
     if (!token) return;
@@ -78,18 +88,34 @@ export default function AjustesScreen() {
   const thumbColor = isDark ? '#c6bfff' : '#002045';
   const devCardBg  = isDark ? '#161d1f' : undefined;
 
-  const handleTest = async () => {
-    if (testing) { Speech.stop(); setTesting(false); return; }
+  const handleTest = () => {
+    if (testing) {
+      pollyPlayer.pause();
+      Speech.stop();
+      setTesting(false);
+      return;
+    }
     setTesting(true);
     const text = voiceId === 'lucia'
       ? 'Hola, soy Lucía. Voy a leer tus notificaciones más importantes.'
       : 'Hola, soy Enrique. Estoy listo para ayudarte con tus alertas.';
-    await Speech.speak(text, {
-      language: 'es-ES',
-      rate: speed,
-      onDone: () => setTesting(false),
-      onError: () => setTesting(false),
-    });
+
+    if (token) {
+      apiCall<{ url: string }>(
+        '/voice/synthesize', 'POST',
+        { text, voiceId, speed, language: 'es-ES' },
+        token,
+      )
+        .then(({ url }) => {
+          pollyPlayer.replace({ uri: url });
+          pollyPlayer.play();
+        })
+        .catch(() => {
+          Speech.speak(text, { language: 'es-ES', rate: speed, onDone: () => setTesting(false), onError: () => setTesting(false) });
+        });
+    } else {
+      Speech.speak(text, { language: 'es-ES', rate: speed, onDone: () => setTesting(false), onError: () => setTesting(false) });
+    }
   };
 
   async function checkPermission() {
@@ -174,10 +200,14 @@ export default function AjustesScreen() {
 
         <View className="mb-lg flex-row items-center gap-sm rounded-lg bg-surface-container-low dark:bg-train-surface-container-low border border-outline-variant dark:border-train-outline-variant px-md py-xs">
           <Icon name="microphone-outline" size={20} color={iconColor} />
-          <Text className="font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">TTS nativo del dispositivo</Text>
-          <View className="ml-auto rounded-full bg-orange-100 px-sm py-0.5">
-            <Text className="text-[11px] font-bold text-orange-700">Dev</Text>
-          </View>
+          <Text className="font-label-lg text-on-surface-variant dark:text-train-on-surface-variant">
+            {token ? 'Amazon Polly' : 'TTS del dispositivo (sin conexión)'}
+          </Text>
+          {token && (
+            <View className="ml-auto rounded-full bg-primary-container px-sm py-0.5">
+              <Text className="text-[11px] font-bold text-on-primary-container">Polly</Text>
+            </View>
+          )}
         </View>
 
         {/* Selector de voz */}
@@ -275,7 +305,9 @@ export default function AjustesScreen() {
           className="mb-xl h-touch-target-min flex-row items-center justify-center gap-xs rounded-lg bg-primary shadow-md active:opacity-90"
         >
           <Icon name={testing ? 'ear-hearing' : 'volume-high'} size={20} color="#ffffff" />
-          <Text className="font-label-lg text-white">{testing ? 'Reproduciendo...' : 'Probar voz'}</Text>
+          <Text className="font-label-lg text-white">
+            {testing ? 'Reproduciendo...' : token ? 'Probar con Amazon Polly' : 'Probar voz'}
+          </Text>
         </Pressable>
 
         {/* ── Herramientas de desarrollo ── */}
