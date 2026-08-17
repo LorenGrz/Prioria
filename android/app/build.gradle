@@ -8,6 +8,7 @@ if (file("google-services.json").exists()) {
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 def appVersionCode = project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 1
 def appVersionName = project.hasProperty('versionName') ? project.property('versionName').toString() : '1.0.0-local'
+def hasFcm = file("google-services.json").exists()
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -185,7 +186,13 @@ dependencies {
         implementation jscFlavor
     }
 
-    if (file("google-services.json").exists()) {
+    if (hasFcm) {
         implementation 'com.google.firebase:firebase-messaging:24.1.0'
     }
+}
+
+// Exclude PrioriaFcmService when Firebase SDK is not available (no google-services.json)
+if (!hasFcm) {
+    android.sourceSets.debug.kotlin.exclude('**/PrioriaFcmService.kt')
+    android.sourceSets.release.kotlin.exclude('**/PrioriaFcmService.kt')
 }
