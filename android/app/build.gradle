@@ -191,8 +191,11 @@ dependencies {
     }
 }
 
-// Exclude PrioriaFcmService when Firebase SDK is not available (no google-services.json)
+// Exclude PrioriaFcmService when Firebase SDK is not available (no google-services.json).
+// sourceSets.kotlin.exclude() doesn't reliably keep this file out of compileDebugKotlin's
+// input (CI still failed on it), so filter the compile tasks directly instead.
 if (!hasFcm) {
-    android.sourceSets.debug.kotlin.exclude('**/PrioriaFcmService.kt')
-    android.sourceSets.release.kotlin.exclude('**/PrioriaFcmService.kt')
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        exclude('**/PrioriaFcmService.kt')
+    }
 }
