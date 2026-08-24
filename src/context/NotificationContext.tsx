@@ -274,12 +274,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     );
     const entry = notificationsRef.current.find((n) => n.id === id);
     const t = tokenRef.current;
-    if (!entry?.backendId || !t) return;
-    const feedback = priority === 'info' ? 'down' : 'up';
+    if (!entry?.backendId || !t || !priority) return;
     apiCall<Record<string, unknown>>(
       `/notifications/${entry.backendId}/feedback`,
       'POST',
-      { feedback },
+      { priority },
       t
     )
       .then((attrs) => {

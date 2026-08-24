@@ -83,8 +83,8 @@ function NotifCard({ item }: { item: NotifEntry }) {
         </Text>
       ) : null}
 
-      {/* Source + priority chips */}
-      <View className="flex-row flex-wrap items-center gap-xs">
+      {/* Source */}
+      <View className="mb-sm flex-row flex-wrap items-center gap-xs">
         <View className="rounded-full bg-surface-container dark:bg-train-surface-container px-sm py-0.5">
           <Text className="text-[10px] font-bold text-on-surface-variant dark:text-train-on-surface-variant">
             {item.source === 'local' ? 'Local' : 'Sistema'}
@@ -95,9 +95,10 @@ function NotifCard({ item }: { item: NotifEntry }) {
             {item.appName}
           </Text>
         )}
+      </View>
 
-        <View style={{ flex: 1 }} />
-
+      {/* Priority chips — always one row, side by side */}
+      <View className="flex-row gap-xs">
         {PRIORITY_CHIPS.map((chip) => {
           const active = item.priority === chip.key;
           const palette = isDark ? chip.dark : chip.light;
