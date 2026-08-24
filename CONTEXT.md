@@ -188,6 +188,23 @@ EXPO_PUBLIC_COGNITO_PASSWORD="Prioria2026!App#"
 
 6. **URL CloudFront**: cambió cuando se recreó la distribución. La URL actual es `https://dbc92xng0o5d8.cloudfront.net`. Actualizar si alguien tiene la anterior guardada.
 
+7. **Decimal de DynamoDB en Lambdas Python**: boto3 devuelve los Number de DynamoDB como `Decimal`, no `int`/`float`. `process_notification.py` pasaba `preferences.get("sensitivity")` directo a `json.dumps()` sin castear — esto rompía el 100% de las notificaciones (`TypeError: Object of type Decimal is not JSON serializable`, todas terminaban en la DLQ). Cualquier valor numérico leído de Dynamo que se vaya a serializar con `json.dumps` necesita `int(...)`/`float(...)` explícito primero. (fix: commit `3c64150`, 2026-08-24)
+
+8. **NotificationListenerService reingresa notificaciones activas al reconectar**: Android llama `onNotificationPosted()` para TODAS las notificaciones activas cada vez que el listener se reconecta (p. ej. en cada reinicio de la app), no solo para las nuevas. `PrioriaNotificationListener` trackea `forwardedKeys` (poblado desde `activeNotifications` en `onListenerConnected()`, limpiado en `onNotificationRemoved()`) para no duplicar ingestas — sin esto, cada reinicio de la app reenvía todas las notificaciones visibles como si fueran nuevas. (fix: commit `27a838f`, 2026-08-24)
+
+9. **Cambiar prioridad manualmente en Historial**: `/notifications/{id}/feedback` acepta `{ priority: 'critica'|'aviso'|'info' }` (fija el score directo al valor representativo de esa banda: 90/60/20) además del `{ feedback: 'up'|'down' }` legado (nudge relativo ±15). El chip de prioridad en Historial SIEMPRE manda `priority` explícito — mandar solo up/down puede terminar empujando el score de vuelta a la banda anterior si ya estaba en un extremo (bug real: tocar "Normal" en un ítem con score 100 sumaba +15 más y volvía a caer en la banda "crítica"). (fix: commit `5feffad`, 2026-08-24)
+
+10. **Ícono adaptativo de Android — la zona visible NO es el 100% del canvas**: el círculo/máscara que realmente se ve en el launcher cubre solo 72dp de los 108dp del canvas (66.7%), no el canvas completo. El glifo debe medir ~65-70% de ESE círculo visible (no del canvas completo) para verse del mismo tamaño que otros íconos del sistema — medido comparando contra Play Store/Maps/Messages en una captura real del emulador. Ver `assets/android-icon-foreground.png` (fix: commit `481d6e8`, 2026-08-24).
+
+11. **Redrive de la DLQ**: si el agente falla y `prioria-notifications-dlq-dev` acumula mensajes, arreglar el bug primero y después reinyectarlos con `aws sqs start-message-move-task --source-arn <dlq-arn> --destination-arn <queue-arn>` (usar `aws sqs list-queues` para los ARNs) — no hace falta reingestar manualmente desde la app.
+
+---
+
+## Testing en el emulador
+
+- **Cuenta de Gmail logueada en el AVD**: `loloxdxd13@gmail.com` — NO es el email personal de Loren (`lorenzograizzaro55@gmail.com`, que es solo su identidad de usuario en estas sesiones). Para probar el flujo de notificaciones end-to-end (mail entra → Gmail lo notifica → `NotificationListenerService` lo captura → backend → agente clasifica), mandar los correos de prueba a `loloxdxd13@gmail.com`, no al email personal.
+- **Navegar la UI por adb con certeza**: no estimar coordenadas de tap a ojo desde un screenshot — falla seguido (la escala mostrada al modelo no es 1:1 con los px reales del dispositivo). Usar `adb shell uiautomator dump /sdcard/window_dump.xml` y leer los `bounds="[x1,y1][x2,y2]"` reales del elemento antes de tocarlo.
+
 ---
 
 ## Estado del MVP (completado)
