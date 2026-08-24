@@ -223,7 +223,7 @@ Resources:
       CorsConfiguration:
         AllowOrigins: ['*']
         AllowHeaders: [Authorization, Content-Type]
-        AllowMethods: [GET, POST, PUT, OPTIONS]
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
       Auth:
         Authorizers:
           CognitoAuthorizer:
@@ -544,6 +544,98 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /train
             Method: POST
+
+  # ---------------------------------------------------------------------
+  # Functions — rules ("Reglas de Filtrado" in Filtros: view/edit/add/delete
+  # the same RulesTable rows train.py and archive.js write, without a chat
+  # roundtrip). Node/esbuild like the notifications handlers, not Python —
+  # these are plain CRUD, no LLM step needed.
+  # ---------------------------------------------------------------------
+  ListRulesFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node24
+        EntryPoints: [src/handlers/rules/list.js]
+    Properties:
+      Handler: src/handlers/rules/list.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBWritePolicy: { TableName: !Ref UsersTable }
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /rules
+            Method: GET
+
+  CreateRuleFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node24
+        EntryPoints: [src/handlers/rules/create.js]
+    Properties:
+      Handler: src/handlers/rules/create.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /rules
+            Method: POST
+
+  UpdateRuleFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node24
+        EntryPoints: [src/handlers/rules/update.js]
+    Properties:
+      Handler: src/handlers/rules/update.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /rules/{ruleId}
+            Method: PUT
+
+  DeleteRuleFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node24
+        EntryPoints: [src/handlers/rules/delete.js]
+    Properties:
+      Handler: src/handlers/rules/delete.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /rules/{ruleId}
+            Method: DELETE
 
   DeleteNotificationFunction:
     Type: AWS::Serverless::Function

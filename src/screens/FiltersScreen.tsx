@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import Icon from '../components/Icon';
+import RulesModal from '../components/RulesModal';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { apiCall } from '../services/api';
@@ -30,6 +31,7 @@ export default function FiltersScreen() {
     seguridad: true, clientes: false, entregas: true,
   });
   const [threshold, setThreshold] = useState<'critico' | 'todo'>('critico');
+  const [rulesModalOpen, setRulesModalOpen] = useState(false);
   const { isDark } = useTheme();
   const { token } = useAuth();
 
@@ -173,7 +175,27 @@ export default function FiltersScreen() {
             })}
           </View>
         </View>
+
+        {/* Rules */}
+        <Pressable
+          onPress={() => setRulesModalOpen(true)}
+          className="mt-xl flex-row items-center justify-between rounded-xl border border-outline-variant p-md dark:border-train-outline-variant"
+          style={{ backgroundColor: cardBg }}
+        >
+          <View className="flex-row items-center gap-sm">
+            <Icon name="format-list-bulleted" size={22} color={isDark ? '#c6bfff' : '#002045'} />
+            <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Reglas de Filtrado</Text>
+          </View>
+          <Icon name="chevron-right" size={22} color={isDark ? '#c8c4d7' : '#43474e'} />
+        </Pressable>
       </ScrollView>
+
+      <RulesModal
+        visible={rulesModalOpen}
+        onClose={() => setRulesModalOpen(false)}
+        token={token}
+        isDark={isDark}
+      />
     </SafeAreaView>
   );
 }
