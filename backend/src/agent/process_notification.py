@@ -131,7 +131,7 @@ def _score_notification(notification, preferences, active_rules):
         "sender": notification.get("sourceApp"),
         "title": notification.get("title"),
         "body": notification.get("body"),
-        "sensitivity_0_100": preferences.get("sensitivity", 85),
+        "sensitivity_0_100": int(preferences.get("sensitivity", 85)),
         "enabled_categories": [k for k, v in preferences.get("categories", {}).items() if v],
         "explicit_rules": active_rules,
     }
