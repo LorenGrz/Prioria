@@ -14,12 +14,32 @@ function timeAgo(date: Date): string {
   return `hace ${Math.floor(diff / 3600)}h`;
 }
 
-type PriorityChip = { key: NonNullable<NotifPriority>; label: string; color: string; bg: string; border: string };
+type PriorityChip = {
+  key: NonNullable<NotifPriority>;
+  label: string;
+  light: { color: string; bg: string; border: string };
+  dark: { color: string; bg: string; border: string };
+};
 
 const PRIORITY_CHIPS: PriorityChip[] = [
-  { key: 'critica', label: 'Urgente', color: '#dc2626', bg: '#fef2f2', border: '#fca5a5' },
-  { key: 'aviso',   label: 'Normal',  color: '#0284c7', bg: '#f0f9ff', border: '#7dd3fc' },
-  { key: 'info',    label: 'Info',    color: '#6b7280', bg: '#f9fafb', border: '#d1d5db' },
+  {
+    key: 'critica',
+    label: 'Urgente',
+    light: { color: '#dc2626', bg: '#fef2f2', border: '#fca5a5' },
+    dark: { color: '#fca5a5', bg: '#4c1414', border: '#dc2626' },
+  },
+  {
+    key: 'aviso',
+    label: 'Normal',
+    light: { color: '#0284c7', bg: '#f0f9ff', border: '#7dd3fc' },
+    dark: { color: '#7dd3fc', bg: '#0c2a3d', border: '#0284c7' },
+  },
+  {
+    key: 'info',
+    label: 'Info',
+    light: { color: '#334155', bg: '#e2e8f0', border: '#94a3b8' },
+    dark: { color: '#cbd5e1', bg: '#1e293b', border: '#64748b' },
+  },
 ];
 
 function NotifCard({ item }: { item: NotifEntry }) {
@@ -46,8 +66,12 @@ function NotifCard({ item }: { item: NotifEntry }) {
           <Text className="text-label-md text-on-surface-variant dark:text-train-on-surface-variant">
             {timeAgo(item.receivedAt)}
           </Text>
-          <Pressable onPress={() => removeNotification(item.id)} hitSlop={8}>
-            <Icon name="trash-can-outline" size={16} color={iconColor} />
+          <Pressable
+            onPress={() => removeNotification(item.id)}
+            hitSlop={10}
+            className="h-touch-target-min w-touch-target-min items-center justify-center rounded-full active:bg-surface-container dark:active:bg-train-surface-container"
+          >
+            <Icon name="trash-can-outline" size={20} color={iconColor} />
           </Pressable>
         </View>
       </View>
@@ -76,20 +100,23 @@ function NotifCard({ item }: { item: NotifEntry }) {
 
         {PRIORITY_CHIPS.map((chip) => {
           const active = item.priority === chip.key;
+          const palette = isDark ? chip.dark : chip.light;
           return (
             <Pressable
               key={chip.key}
               onPress={() => updatePriority(item.id, chip.key)}
+              hitSlop={4}
               style={{
-                paddingHorizontal: 10,
-                paddingVertical: 3,
+                minHeight: 36,
+                paddingHorizontal: 16,
+                justifyContent: 'center',
                 borderRadius: 999,
-                borderWidth: 1,
-                borderColor: active ? chip.border : (isDark ? '#474554' : '#c4c6cf'),
-                backgroundColor: active ? chip.bg : 'transparent',
+                borderWidth: active ? 1.5 : 1,
+                borderColor: active ? palette.border : (isDark ? '#474554' : '#c4c6cf'),
+                backgroundColor: active ? palette.bg : 'transparent',
               }}
             >
-              <Text style={{ fontSize: 10, fontWeight: '600', color: active ? chip.color : (isDark ? '#928ea0' : '#74777f') }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: active ? palette.color : (isDark ? '#928ea0' : '#74777f') }}>
                 {chip.label}
               </Text>
             </Pressable>
