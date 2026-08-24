@@ -6,7 +6,13 @@ import { getUser } from '../../lib/auth.js';
 import { created, badRequest, serverError } from '../../lib/response.js';
 
 const sqs = new SQSClient({});
-const NINETY_DAYS_SECONDS = 90 * 24 * 60 * 60;
+// Primary retention is the weekly ArchiveNotificationsFunction (30-day
+// target, see archive.js): it folds each day's notifications into a
+// RulesTable rule before hard-deleting them. This TTL is a failsafe only —
+// if that job is broken for a while, DynamoDB's passive TTL still cleans up
+// raw data, with a 10-day buffer matching archive.js's own backlog cap so
+// the job has room to catch up before TTL beats it to the punch.
+const NOTIFICATION_TTL_SECONDS = 40 * 24 * 60 * 60;
 
 /**
  * Entry point for the Android NotificationListenerService: every captured
@@ -42,7 +48,7 @@ export const handler = async (event) => {
       boostCount: 0, // brief app-opens while this was the latest — medium signal
       createdAt: now,
       processedAt: null,
-      expiresAt: Math.floor(Date.now() / 1000) + NINETY_DAYS_SECONDS,
+      expiresAt: Math.floor(Date.now() / 1000) + NOTIFICATION_TTL_SECONDS,
     };
 
     await ddb.send(new PutCommand({ TableName: TABLES.notifications, Item: item }));

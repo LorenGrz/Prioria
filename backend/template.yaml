@@ -558,6 +558,39 @@ Resources:
             Path: /notifications/{id}
             Method: DELETE
 
+  ArchiveNotificationsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node24
+        EntryPoints: [src/handlers/notifications/archive.js]
+    Properties:
+      Handler: src/handlers/notifications/archive.handler
+      CodeUri: .
+      Timeout: 120
+      Description: >
+        Weekly: folds notifications turning ~30 days old into a running
+        per-(category, sourceApp) rule in RulesTable, then hard-deletes the
+        originals. See archive.js for the full design rationale.
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:TransactWriteItems]
+              Resource: [!GetAtt RulesTable.Arn, !GetAtt UsersTable.Arn]
+            - Effect: Allow
+              Action: [dynamodb:UpdateItem]
+              Resource: !GetAtt UsersTable.Arn
+      Events:
+        Weekly:
+          Type: Schedule
+          Properties:
+            Schedule: rate(7 days)
+
 Outputs:
   ApiUrl:
     Description: Base URL for the HTTP API

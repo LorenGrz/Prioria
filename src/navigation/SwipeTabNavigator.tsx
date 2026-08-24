@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Keyboard, Pressable, Text, View } from 'react-native';
+import { Animated, Dimensions, Keyboard, Pressable, View } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
@@ -23,10 +23,10 @@ const SCREENS = [HomeScreen, FiltersScreen, TrainScreen, HistoryScreen, AjustesS
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const TAB_WIDTH = SCREEN_WIDTH / TABS.length;
-// Pill wide enough for icon + longest label ("Ajustes" ~42px + icon 18px + gap 5px + h-pad 20px)
-const PILL_WIDTH = Math.min(Math.round(TAB_WIDTH * 0.90), 88);
-const PILL_HEIGHT = 36;
 const TAB_BAR_HEIGHT = 60;
+// Fills the whole rectangle each tab owns, with a small gutter between tabs
+const PILL_WIDTH = TAB_WIDTH - 12;
+const PILL_HEIGHT = TAB_BAR_HEIGHT - 10;
 
 export default function SwipeTabNavigator() {
   const pagerRef = useRef<PagerView>(null);
@@ -35,8 +35,14 @@ export default function SwipeTabNavigator() {
   const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const indicatorAnim = useRef(new Animated.Value(0)).current;
-  const tappedRef = useRef(false);
+  // Native-driven scroll progress: PagerView feeds these directly for BOTH
+  // swipes and tap-triggered setPage() calls (setPage animates through the
+  // same native scroll, it isn't a separate transition). The indicator is
+  // therefore always reading the real, current scroll position — there's no
+  // second animation to fall out of sync with it.
+  const positionAnim = useRef(new Animated.Value(0)).current;
+  const offsetAnim = useRef(new Animated.Value(0)).current;
+  const scrollAnim = useRef(Animated.add(positionAnim, offsetAnim)).current;
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
@@ -44,31 +50,29 @@ export default function SwipeTabNavigator() {
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  const animateIndicator = (index: number) => {
-    Animated.spring(indicatorAnim, {
-      toValue: index,
-      useNativeDriver: true,
-      tension: 60,
-      friction: 10,
-    }).start();
-  };
-
   const goTo = (index: number) => {
-    tappedRef.current = true;
+    // Always the native scroll-through, adjacent or a multi-tab skip alike —
+    // the indicator and the actual view transition are driven by the exact
+    // same event stream, so they move together on a real device. This looked
+    // slow/janky in the software-rendered emulator (no GPU accel), but that's
+    // an emulator rendering limitation, not this code — a real phone drives
+    // PagerView's native scroll at full speed.
+    // Not setting activeIndex here on purpose: the icon glyph/color swap should
+    // land exactly when the sliding block actually arrives (onPageSelected,
+    // driven by the same native scroll as the block). Flipping it immediately
+    // on tap made the icon change shape/color well before the block reached
+    // it, which read as two separate, disconnected changes.
     pagerRef.current?.setPage(index);
-    setActiveIndex(index);
-    animateIndicator(index);
   };
 
   const barBg       = isDark ? '#0e1416' : '#faf8ff';
-  const borderColor = isDark ? '#474554' : '#c4c6cf';
   const iconColor   = isDark ? '#c8c4d7' : '#6b7280';
   const pillBg      = isDark ? '#6c5ce7' : '#1a365d';
   const pillText    = isDark ? '#faf6ff' : '#e8eef9';
   const navBg       = isDark ? '#0e1416' : '#faf8ff';
 
   // Pill slides to center of each tab
-  const pillTranslateX = indicatorAnim.interpolate({
+  const pillTranslateX = scrollAnim.interpolate({
     inputRange: TABS.map((_, i) => i),
     outputRange: TABS.map((_, i) => i * TAB_WIDTH + (TAB_WIDTH - PILL_WIDTH) / 2),
   });
@@ -84,15 +88,15 @@ export default function SwipeTabNavigator() {
         style={{ flex: 1 }}
         initialPage={0}
         scrollEnabled={!keyboardOpen}
-        onPageSelected={(e) => {
-          const idx = e.nativeEvent.position;
-          setActiveIndex(idx);
-          if (tappedRef.current) {
-            tappedRef.current = false;
-          } else {
-            animateIndicator(idx);
-          }
-        }}
+        onPageScroll={Animated.event(
+          // react-native-pager-view invokes this prop as a plain JS callback
+          // (see its PagerView.tsx) rather than wiring it through the native
+          // events system, so useNativeDriver here throws "Object is not a
+          // function" — it needs the JS-side event mapping.
+          [{ nativeEvent: { position: positionAnim, offset: offsetAnim } }],
+          { useNativeDriver: false },
+        )}
+        onPageSelected={(e) => setActiveIndex(e.nativeEvent.position)}
         overdrag
       >
         {SCREENS.map((Screen, i) => (
@@ -105,11 +109,12 @@ export default function SwipeTabNavigator() {
       {/* Tab bar */}
       <View style={{
         backgroundColor: barBg,
-        borderTopWidth: 1,
-        borderTopColor: borderColor,
         paddingBottom: insets.bottom || 8,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        elevation: 12,
       }}>
-        {/* Animated sliding pill — sits behind the tab buttons */}
+        {/* Animated sliding block — fills each tab's rectangle, follows the swipe */}
         <Animated.View
           style={{
             position: 'absolute',
@@ -117,7 +122,7 @@ export default function SwipeTabNavigator() {
             left: 0,
             width: PILL_WIDTH,
             height: PILL_HEIGHT,
-            borderRadius: 999,
+            borderRadius: 18,
             backgroundColor: pillBg,
             transform: [{ translateX: pillTranslateX }],
           }}
@@ -127,6 +132,13 @@ export default function SwipeTabNavigator() {
         <View style={{ flexDirection: 'row', height: TAB_BAR_HEIGHT }}>
           {TABS.map((tab, i) => {
             const focused = activeIndex === i;
+            // Grows as the sliding block approaches this tab, shrinks back as it leaves —
+            // driven by the same value as the block, so both animate in lockstep.
+            const scale = scrollAnim.interpolate({
+              inputRange: [i - 1, i, i + 1],
+              outputRange: [1, 1.15, 1],
+              extrapolate: 'clamp',
+            });
             return (
               <Pressable
                 key={tab.label}
@@ -134,23 +146,13 @@ export default function SwipeTabNavigator() {
                 style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
                 hitSlop={4}
               >
-                {focused ? (
-                  // Active: icon (smaller) + label side by side inside pill area
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <Icon name={tab.iconFocused} size={18} color={pillText} />
-                    <Text style={{
-                      color: pillText,
-                      fontSize: 12,
-                      fontWeight: '700',
-                      letterSpacing: 0.2,
-                    }}>
-                      {tab.label}
-                    </Text>
-                  </View>
-                ) : (
-                  // Inactive: larger icon, no pill
-                  <Icon name={tab.icon} size={24} color={iconColor} />
-                )}
+                <Animated.View style={{ transform: [{ scale }] }}>
+                  <Icon
+                    name={focused ? tab.iconFocused : tab.icon}
+                    size={24}
+                    color={focused ? pillText : iconColor}
+                  />
+                </Animated.View>
               </Pressable>
             );
           })}
