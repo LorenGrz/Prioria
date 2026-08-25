@@ -1,8 +1,6 @@
+import Image from 'next/image';
 import Icon from '../components/Icon';
 import PhoneFrame from '../components/PhoneFrame';
-import InicioPreview from '../components/previews/InicioPreview';
-import HistorialPreview from '../components/previews/HistorialPreview';
-import EntrenarPreview from '../components/previews/EntrenarPreview';
 
 const FEATURES = [
   {
@@ -93,18 +91,36 @@ export default function Home() {
       <section className="bg-surface-container-low py-16">
         <div className="mx-auto flex max-w-6xl flex-wrap items-start justify-center gap-10 px-6">
           <PhoneFrame label="Inicio">
-            <InicioPreview />
+            <Image
+              src="/screenshots/inicio.webp"
+              alt="Pantalla de inicio de Prioria con el resumen del día y la última notificación"
+              width={1080}
+              height={2305}
+              className="h-full w-full object-cover object-top"
+            />
           </PhoneFrame>
           <PhoneFrame label="Historial">
-            <HistorialPreview />
+            <Image
+              src="/screenshots/historial.webp"
+              alt="Historial de alertas de Prioria clasificadas por prioridad"
+              width={1080}
+              height={2305}
+              className="h-full w-full object-cover object-top"
+            />
           </PhoneFrame>
           <PhoneFrame label="Entrenar (chat con el agente)">
-            <EntrenarPreview />
+            <Image
+              src="/screenshots/entrenar.webp"
+              alt="Chat de entrenamiento donde el usuario le enseña una regla al agente"
+              width={1080}
+              height={2305}
+              className="h-full w-full object-cover object-top"
+            />
           </PhoneFrame>
         </div>
         <p className="mx-auto mt-8 max-w-xl px-6 text-center text-sm text-on-surface-variant">
-          Más pantallas en la app: Onboarding, Filtros y Voz — mismas 6 vistas del prototipo,
-          llevadas a React Native con NativeWind.
+          Capturas reales de la app corriendo en emulador. Más pantallas en la app: Onboarding,
+          Filtros (con Reglas de Filtrado) y Voz.
         </p>
       </section>
 
