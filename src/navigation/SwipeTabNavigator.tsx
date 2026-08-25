@@ -13,7 +13,7 @@ import AjustesScreen from '../screens/AjustesScreen';
 
 const TABS = [
   { label: 'Inicio',   icon: 'home-variant-outline' as const, iconFocused: 'home-variant' as const },
-  { label: 'Filtros',  icon: 'tune-variant' as const,         iconFocused: 'tune' as const },
+  { label: 'Filtros',  icon: 'tune-variant' as const,         iconFocused: 'tune-variant' as const },
   { label: 'Chat',     icon: 'forum-outline' as const,        iconFocused: 'forum' as const },
   { label: 'Log',      icon: 'history' as const,              iconFocused: 'history' as const },
   { label: 'Ajustes',  icon: 'cog-outline' as const,          iconFocused: 'cog' as const },
@@ -44,6 +44,13 @@ export default function SwipeTabNavigator() {
   const offsetAnim = useRef(new Animated.Value(0)).current;
   const scrollAnim = useRef(Animated.add(positionAnim, offsetAnim)).current;
 
+  // Guards against re-entrant setPage() calls: tapping a tab while the pager
+  // is still 'dragging'/'settling' from a previous tap makes the native side
+  // restart mid-flight and briefly snap the scroll position back to the
+  // abandoned target before continuing — visible as the indicator "jumping"
+  // to the wrong tab and correcting itself (looked like a double animation).
+  const pagerIdleRef = useRef(true);
+
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
     const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
@@ -62,6 +69,7 @@ export default function SwipeTabNavigator() {
     // driven by the same native scroll as the block). Flipping it immediately
     // on tap made the icon change shape/color well before the block reached
     // it, which read as two separate, disconnected changes.
+    if (!pagerIdleRef.current) return;
     pagerRef.current?.setPage(index);
   };
 
@@ -71,14 +79,37 @@ export default function SwipeTabNavigator() {
   const pillText    = isDark ? '#faf6ff' : '#e8eef9';
   const navBg       = isDark ? '#0e1416' : '#faf8ff';
 
-  // Pill slides to center of each tab
-  const pillTranslateX = scrollAnim.interpolate({
-    inputRange: TABS.map((_, i) => i),
-    outputRange: TABS.map((_, i) => i * TAB_WIDTH + (TAB_WIDTH - PILL_WIDTH) / 2),
-  });
+  const pillLeftFor = (i: number) => i * TAB_WIDTH + (TAB_WIDTH - PILL_WIDTH) / 2;
 
   // Pill vertical center: (TAB_BAR_HEIGHT - PILL_HEIGHT) / 2
   const pillTop = (TAB_BAR_HEIGHT - PILL_HEIGHT) / 2;
+
+  // Pill no longer tracks the drag horizontally — it fades out at the old
+  // tab and back in at the new one once the page has settled (activeIndex),
+  // instead of sliding continuously with scrollAnim. pillLeftAnim is an
+  // Animated.Value (not React state) so setValue() repositions it instantly,
+  // with no re-render lag — using state here made the fade-in briefly render
+  // at the OLD left before React committed the new one, i.e. a visible
+  // teleport partway through the fade.
+  const pillLeftAnim = useRef(new Animated.Value(pillLeftFor(0))).current;
+  const pillOpacity = useRef(new Animated.Value(1)).current;
+  const pillScale = useRef(new Animated.Value(1)).current;
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    Animated.timing(pillOpacity, { toValue: 0, duration: 100, useNativeDriver: true }).start(() => {
+      pillLeftAnim.setValue(pillLeftFor(activeIndex));
+      pillScale.setValue(0.85);
+      Animated.parallel([
+        Animated.timing(pillOpacity, { toValue: 1, duration: 160, useNativeDriver: true }),
+        Animated.spring(pillScale, { toValue: 1, friction: 6, useNativeDriver: true }),
+      ]).start();
+    });
+  }, [activeIndex]);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: navBg }}>
@@ -97,6 +128,9 @@ export default function SwipeTabNavigator() {
           { useNativeDriver: false },
         )}
         onPageSelected={(e) => setActiveIndex(e.nativeEvent.position)}
+        onPageScrollStateChanged={(e) => {
+          pagerIdleRef.current = e.nativeEvent.pageScrollState === 'idle';
+        }}
         overdrag
       >
         {SCREENS.map((Screen, i) => (
@@ -114,17 +148,18 @@ export default function SwipeTabNavigator() {
         borderTopRightRadius: 24,
         elevation: 12,
       }}>
-        {/* Animated sliding block — fills each tab's rectangle, follows the swipe */}
+        {/* Highlight block — fills the active tab's rectangle, fades in/out on tab change */}
         <Animated.View
           style={{
             position: 'absolute',
             top: pillTop,
-            left: 0,
+            left: pillLeftAnim,
             width: PILL_WIDTH,
             height: PILL_HEIGHT,
             borderRadius: 18,
             backgroundColor: pillBg,
-            transform: [{ translateX: pillTranslateX }],
+            opacity: pillOpacity,
+            transform: [{ scale: pillScale }],
           }}
         />
 
