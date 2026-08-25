@@ -1,8 +1,10 @@
 package com.lorengrz.prioria
 
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import com.facebook.react.HeadlessJsTaskService
 
 class PrioriaNotificationListener : NotificationListenerService() {
 
@@ -41,12 +43,28 @@ class PrioriaNotificationListener : NotificationListenerService() {
             sbn.packageName
         }
 
-        NotificationModule.getInstance()?.sendNotificationEvent(
-            packageName = sbn.packageName,
-            appName = appName,
-            title = title,
-            body = body,
-        )
+        if (NotificationModule.hasActiveReactInstance()) {
+            // App is alive — fast path, updates NotificationContext directly.
+            NotificationModule.getInstance()?.sendNotificationEvent(
+                packageName = sbn.packageName,
+                appName = appName,
+                title = title,
+                body = body,
+            )
+        } else {
+            // App closed/killed — no React instance to emit an event into.
+            // Spin up a headless JS task instead so the notification still
+            // gets classified and saved, not just silently dropped.
+            val taskIntent = Intent(applicationContext, PrioriaHeadlessTaskService::class.java).apply {
+                putExtra("packageName", sbn.packageName)
+                putExtra("appName", appName)
+                putExtra("title", title)
+                putExtra("body", body)
+                putExtra("timestamp", sbn.postTime.toDouble())
+            }
+            applicationContext.startService(taskIntent)
+            HeadlessJsTaskService.acquireWakeLockNow(applicationContext)
+        }
 
         // Update home screen widget with the latest notification
         PrioriaWidgetProvider.pushUpdate(

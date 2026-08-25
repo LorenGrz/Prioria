@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   Linking,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -27,6 +28,7 @@ export default function OnboardingScreen({ navigation }: Props) {
   const [step, setStep] = useState(0);
   const [notifPerm, setNotifPerm] = useState<PermState>('idle');
   const [listenerPerm, setListenerPerm] = useState<PermState>('idle');
+  const [batteryPerm, setBatteryPerm] = useState<PermState>('idle');
   const [granting, setGranting] = useState(false);
 
   const goToStep = (next: number) => {
@@ -77,25 +79,46 @@ export default function OnboardingScreen({ navigation }: Props) {
       setListenerPerm('denied');
     }
 
+    // 3. Battery optimization exemption — without this, aggressive OEM
+    // battery managers can kill the whole process (listener included) in
+    // the background, so notifications never get processed while closed.
+    try {
+      const alreadyIgnoring: boolean =
+        (await NativeModules.NotificationModule?.isIgnoringBatteryOptimizations?.()) ?? false;
+      if (alreadyIgnoring) {
+        setBatteryPerm('granted');
+      } else {
+        NativeModules.NotificationModule?.requestIgnoreBatteryOptimizations?.();
+        setBatteryPerm('granted'); // optimistic — user sees the system dialog
+      }
+    } catch {
+      setBatteryPerm('denied');
+    }
+
     setGranting(false);
   };
 
-  // Check listener access when user returns from settings
+  // Check access when user returns from settings/system dialogs
   const checkListenerAccess = async () => {
     try {
       const N = await import('expo-notifications');
       const { status } = await N.getPermissionsAsync();
       setNotifPerm(status === 'granted' ? 'granted' : 'denied');
     } catch {}
+    try {
+      const isIgnoring: boolean =
+        (await NativeModules.NotificationModule?.isIgnoringBatteryOptimizations?.()) ?? false;
+      setBatteryPerm(isIgnoring ? 'granted' : 'denied');
+    } catch {}
     // Listener service access can't be checked programmatically without native module —
     // mark as granted optimistically if user came back from settings
-    if (listenerPerm === 'granted') return;
-    setListenerPerm('granted');
+    if (listenerPerm !== 'granted') setListenerPerm('granted');
   };
 
   const permOk = notifPerm === 'granted';
   const listenerOk = listenerPerm === 'granted';
-  const bothGranted = permOk && listenerOk;
+  const batteryOk = batteryPerm === 'granted';
+  const bothGranted = permOk && listenerOk && batteryOk;
 
   return (
     <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-background">
@@ -150,7 +173,7 @@ export default function OnboardingScreen({ navigation }: Props) {
           </View>
 
           {/* Listener */}
-          <View className="mb-xl flex-row items-center gap-md rounded-xl border border-outline-variant bg-surface-container-low p-md">
+          <View className="mb-md flex-row items-center gap-md rounded-xl border border-outline-variant bg-surface-container-low p-md">
             <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: listenerOk ? '#dcfce7' : '#dae2fd', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name={listenerOk ? 'check-circle' : 'shield-key-outline'} size={22} color={listenerOk ? '#16a34a' : '#002045'} />
             </View>
@@ -161,6 +184,20 @@ export default function OnboardingScreen({ navigation }: Props) {
               </Text>
             </View>
             {listenerOk && <Icon name="check" size={18} color="#16a34a" />}
+          </View>
+
+          {/* Battery optimization */}
+          <View className="mb-xl flex-row items-center gap-md rounded-xl border border-outline-variant bg-surface-container-low p-md">
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: batteryOk ? '#dcfce7' : '#dae2fd', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name={batteryOk ? 'check-circle' : 'battery-alert-variant-outline'} size={22} color={batteryOk ? '#16a34a' : '#002045'} />
+            </View>
+            <View className="flex-1">
+              <Text className="font-label-lg text-on-surface">Sin restricciones de batería</Text>
+              <Text className="text-label-md text-on-surface-variant">
+                {batteryOk ? 'Concedido' : 'Para seguir escuchando notificaciones con la app cerrada'}
+              </Text>
+            </View>
+            {batteryOk && <Icon name="check" size={18} color="#16a34a" />}
           </View>
 
           {!bothGranted ? (

@@ -21,6 +21,8 @@ import {
 import RootNavigator from './src/navigation/RootNavigator';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
+import { PreferencesProvider } from './src/context/PreferencesContext';
+import { RulesProvider } from './src/context/RulesContext';
 import { NotificationProvider } from './src/context/NotificationContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -54,6 +56,8 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+      <PreferencesProvider>
+      <RulesProvider>
       <NotificationProvider>
       <SafeAreaProvider>
         <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
@@ -64,6 +68,8 @@ export default function App() {
         </View>
       </SafeAreaProvider>
       </NotificationProvider>
+      </RulesProvider>
+      </PreferencesProvider>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import Icon from '../components/Icon';
 import { useAuth } from '../context/AuthContext';
+import { useRules } from '../context/RulesContext';
 import { apiCall } from '../services/api';
 
 type Message = {
@@ -33,6 +34,7 @@ export default function TrainScreen() {
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList>(null);
   const { token } = useAuth();
+  const { addRule, activeRuleTexts } = useRules();
 
   const scrollToEnd = () => setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
 
@@ -52,8 +54,16 @@ export default function TrainScreen() {
     scrollToEnd();
 
     try {
-      const data = await apiCall<{ reply: string }>('/train', 'POST', { message: text }, token);
+      const data = await apiCall<{ rule: string; reply: string }>(
+        '/train',
+        'POST',
+        { message: text, existingRules: activeRuleTexts() },
+        token
+      );
       const aiText = data.reply ?? 'Regla guardada.';
+      if (data.rule) {
+        await addRule(data.rule, 'chat', text).catch(() => {});
+      }
       setMessages((prev) => [
         ...prev,
         { id: `${Date.now()}-ai`, from: 'ai', text: aiText },

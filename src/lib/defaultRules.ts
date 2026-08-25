@@ -1,8 +1,10 @@
 /**
- * Starter rules seeded once per user (see rules/list.js) so a new "Reglas
- * de Filtrado" list isn't empty on first open. Plain baseline heuristics
- * aligned with FiltersScreen's category list — fully editable/deletable
- * like any other rule once seeded.
+ * Starter rules seeded once, locally, on first ever read of the rules
+ * store (see storage/rules.ts) so "Reglas de Filtrado" isn't empty on
+ * first open. Plain baseline heuristics aligned with FiltersScreen's
+ * category list — fully editable/deletable like any other rule once
+ * seeded. Ported from the old backend/src/lib/defaultRules.js — that
+ * table-backed seed is gone, this is the on-device equivalent.
  */
 export const DEFAULT_RULES = [
   'Las notificaciones de bancos y pagos son críticas por defecto: hay dinero en juego.',

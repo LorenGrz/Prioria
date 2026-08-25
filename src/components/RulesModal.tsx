@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from './Icon';
-import { apiCall } from '../services/api';
-import type { Rule } from '../types/rules';
+import { useRules } from '../context/RulesContext';
+import type { Rule } from '../lib/storage/rules';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-  token: string | null;
   isDark: boolean;
 };
 
@@ -16,28 +15,15 @@ const SOURCE_LABEL: Record<Rule['source'], string> = {
   default: 'Regla por defecto',
   chat: 'Creada por chat',
   manual: 'Creada manualmente',
-  'auto-archive': 'Aprendida automáticamente',
 };
 
-export default function RulesModal({ visible, onClose, token, isDark }: Props) {
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [rules, setRules] = useState<Rule[]>([]);
+export default function RulesModal({ visible, onClose, isDark }: Props) {
+  const { rules, ready, updateRule, removeRule, addRule } = useRules();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newRuleText, setNewRuleText] = useState('');
-
-  useEffect(() => {
-    if (!visible || !token) return;
-    setStatus('loading');
-    apiCall<{ items: Rule[] }>('/rules', 'GET', undefined, token)
-      .then((res) => {
-        setRules(res.items);
-        setStatus('ready');
-      })
-      .catch(() => setStatus('error'));
-  }, [visible, token]);
 
   const cardBg      = isDark ? '#1a2123' : '#ffffff';
   const iconColor   = isDark ? '#c8c4d7' : '#43474e';
@@ -47,48 +33,28 @@ export default function RulesModal({ visible, onClose, token, isDark }: Props) {
   const trackTrue   = isDark ? '#6c5ce7' : '#002045';
 
   async function toggleActive(rule: Rule) {
-    if (!token) return;
-    const nextActive = !rule.active;
-    setRules((prev) => prev.map((r) => (r.ruleId === rule.ruleId ? { ...r, active: nextActive } : r)));
-    try {
-      await apiCall(`/rules/${rule.ruleId}`, 'PUT', { active: nextActive }, token);
-    } catch {
-      setRules((prev) => prev.map((r) => (r.ruleId === rule.ruleId ? { ...r, active: rule.active } : r)));
-    }
+    await updateRule(rule.ruleId, { active: !rule.active }).catch(() => {});
   }
 
   async function saveEdit() {
-    if (!token || !editingId) return;
+    if (!editingId) return;
     const ruleText = editingText.trim();
     if (!ruleText) return;
     const ruleId = editingId;
-    setRules((prev) => prev.map((r) => (r.ruleId === ruleId ? { ...r, ruleText } : r)));
     setEditingId(null);
-    try {
-      await apiCall(`/rules/${ruleId}`, 'PUT', { ruleText }, token);
-    } catch {
-      // Best-effort: local edit stays visible until the next reload even if the PUT failed.
-    }
+    await updateRule(ruleId, { ruleText }).catch(() => {});
   }
 
   async function confirmDelete(ruleId: string) {
-    if (!token) return;
     setDeletingId(null);
-    setRules((prev) => prev.filter((r) => r.ruleId !== ruleId));
-    try {
-      await apiCall(`/rules/${ruleId}`, 'DELETE', undefined, token);
-    } catch {
-      // Not re-inserting on failure — the next reload will resync from the backend.
-    }
+    await removeRule(ruleId).catch(() => {});
   }
 
-  async function addRule() {
-    if (!token) return;
+  async function handleAddRule() {
     const ruleText = newRuleText.trim();
     if (!ruleText) return;
     try {
-      const { rule } = await apiCall<{ rule: Rule }>('/rules', 'POST', { ruleText }, token);
-      setRules((prev) => [...prev, rule]);
+      await addRule(ruleText, 'manual');
       setNewRuleText('');
       setAdding(false);
     } catch {
@@ -115,7 +81,7 @@ export default function RulesModal({ visible, onClose, token, isDark }: Props) {
             </Pressable>
           </View>
 
-          {status === 'loading' && (
+          {!ready && (
             <View className="flex-1 items-center justify-center">
               <Text className="font-body-md text-on-surface-variant dark:text-train-on-surface-variant">
                 Cargando reglas...
@@ -123,15 +89,7 @@ export default function RulesModal({ visible, onClose, token, isDark }: Props) {
             </View>
           )}
 
-          {status === 'error' && (
-            <View className="flex-1 items-center justify-center px-lg">
-              <Text className="text-center font-body-md text-on-surface-variant dark:text-train-on-surface-variant">
-                No se pudieron cargar las reglas. Cerrá e intentá de nuevo.
-              </Text>
-            </View>
-          )}
-
-          {status === 'ready' && (
+          {ready && (
             <ScrollView className="flex-1 px-margin-mobile" contentContainerClassName="pb-lg pt-md">
               <RuleSection
                 title="Reglas por defecto"
@@ -175,7 +133,7 @@ export default function RulesModal({ visible, onClose, token, isDark }: Props) {
                     multiline
                     className="flex-1 font-body-md text-on-surface dark:text-train-on-surface"
                   />
-                  <Pressable onPress={addRule} hitSlop={8}>
+                  <Pressable onPress={handleAddRule} hitSlop={8}>
                     <Icon name="check" size={22} color={accentColor} />
                   </Pressable>
                   <Pressable onPress={() => { setAdding(false); setNewRuleText(''); }} hitSlop={8}>

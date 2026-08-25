@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Linking, NativeModules, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import * as Speech from 'expo-speech';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import Constants from 'expo-constants';
@@ -8,6 +8,7 @@ import Slider from '@react-native-community/slider';
 import Icon from '../components/Icon';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { usePreferences } from '../context/PreferencesContext';
 import { apiCall } from '../services/api';
 
 const VOICES = [
@@ -41,12 +42,14 @@ function SectionTitle({ label, isDark }: { label: string; isDark: boolean }) {
 
 export default function AjustesScreen() {
   const { isDark, toggleTheme } = useTheme();
-  const { token } = useAuth();
-  const [voiceId, setVoiceId] = useState('lucia');
-  const [speed, setSpeed] = useState(1.0);
+  const { token, signOut } = useAuth();
+  const { preferences, setPreferences } = usePreferences();
+  const voiceId = preferences.voice.voiceId;
+  const speed = preferences.voice.speed;
   const [testing, setTesting] = useState(false);
-
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Local mirror for smooth drag feedback, same pattern as FiltersScreen's sensitivity slider.
+  const [liveSpeed, setLiveSpeed] = useState(speed);
+  useEffect(() => setLiveSpeed(speed), [speed]);
 
   // expo-audio player for Polly TTS (initialized with no source; source loaded on demand)
   const pollyPlayer = useAudioPlayer('');
@@ -57,28 +60,25 @@ export default function AjustesScreen() {
     if (pollyStatus.didJustFinish) setTesting(false);
   }, [pollyStatus.didJustFinish]);
 
-  // Load voice preferences from backend on mount
-  useEffect(() => {
-    if (!token) return;
-    apiCall<{ voice?: { voiceId?: string; speed?: number } }>('/preferences', 'GET', undefined, token)
-      .then((prefs) => {
-        if (prefs.voice?.voiceId) setVoiceId(prefs.voice.voiceId);
-        if (prefs.voice?.speed != null) setSpeed(prefs.voice.speed);
-      })
-      .catch(() => {});
-  }, [token]);
-
-  function scheduleVoiceSave(vid: string, spd: number) {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      if (!token) return;
-      apiCall('/preferences', 'PUT', { voice: { voiceId: vid, speed: spd, language: 'es-ES' } }, token).catch(() => {});
-    }, 1500);
+  function saveVoice(patch: Partial<typeof preferences.voice>) {
+    setPreferences({ voice: { ...preferences.voice, ...patch } });
   }
 
   const [permStatus, setPermStatus] = useState<PermStatus | null>(null);
   const [lastNotifId, setLastNotifId] = useState<string | null>(null);
   const [tokenMsg, setTokenMsg] = useState<string | null>(null);
+  const [batteryStatus, setBatteryStatus] = useState<PermStatus | null>(null);
+
+  const checkBatteryStatus = async () => {
+    try {
+      const isIgnoring: boolean =
+        (await NativeModules.NotificationModule?.isIgnoringBatteryOptimizations?.()) ?? false;
+      setBatteryStatus(isIgnoring ? 'granted' : 'denied');
+    } catch {
+      setBatteryStatus('unavailable');
+    }
+  };
+  useEffect(() => { checkBatteryStatus(); }, []);
 
   const isExpoGo = Constants.appOwnership === 'expo';
   const iconColor = isDark ? '#c8c4d7' : '#43474e';
@@ -117,6 +117,13 @@ export default function AjustesScreen() {
       Speech.speak(text, { language: 'es-ES', rate: speed, onDone: () => setTesting(false), onError: () => setTesting(false) });
     }
   };
+
+  function handleSignOut() {
+    Alert.alert('Cerrar sesión', '¿Seguro que querés salir de tu cuenta?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Cerrar sesión', style: 'destructive', onPress: () => signOut() },
+    ]);
+  }
 
   async function checkPermission() {
     try {
@@ -225,7 +232,7 @@ export default function AjustesScreen() {
               return (
                 <Pressable
                   key={voice.id}
-                  onPress={() => { setVoiceId(voice.id); scheduleVoiceSave(voice.id, speed); }}
+                  onPress={() => saveVoice({ voiceId: voice.id as 'lucia' | 'enrique' })}
                   className={`flex-row items-center justify-between rounded-lg border p-sm ${
                     active
                       ? 'border-outline dark:border-train-outline bg-surface-container-low dark:bg-train-surface-container-low'
@@ -280,14 +287,14 @@ export default function AjustesScreen() {
               <Icon name="speedometer" size={20} color={iconColor} />
               <Text className="font-label-lg uppercase tracking-wider text-on-surface-variant dark:text-train-on-surface-variant">Velocidad de Lectura</Text>
             </View>
-            <Text className="rounded-lg bg-primary-fixed px-sm py-xs font-bold text-primary dark:text-train-primary">{speed.toFixed(1)}x</Text>
+            <Text className="rounded-lg bg-primary-fixed px-sm py-xs font-bold text-primary dark:text-train-primary">{liveSpeed.toFixed(1)}x</Text>
           </View>
           <View className="px-sm py-md">
             <Slider
               minimumValue={0.5} maximumValue={2.0} step={0.1}
-              value={speed}
-              onValueChange={setSpeed}
-              onSlidingComplete={(s) => scheduleVoiceSave(voiceId, s)}
+              value={liveSpeed}
+              onValueChange={setLiveSpeed}
+              onSlidingComplete={(s) => saveVoice({ speed: s })}
               minimumTrackTintColor={trackMin}
               maximumTrackTintColor={trackMax}
               thumbTintColor={thumbColor}
@@ -415,8 +422,52 @@ export default function AjustesScreen() {
                 <Text className="font-label-lg text-primary dark:text-train-primary">Abrir ajustes</Text>
               </Pressable>
             </View>
+
+            {/* Battery optimization exemption */}
+            <View
+              className="mb-xl rounded-xl border border-outline-variant dark:border-train-outline-variant p-md"
+              style={devCardBg ? { backgroundColor: devCardBg } : undefined}
+            >
+              <View className="mb-sm flex-row items-center justify-between">
+                <View className="flex-row items-center gap-sm">
+                  <Icon name="battery-alert-variant-outline" size={18} color={iconColor} />
+                  <Text className="font-label-lg text-on-surface dark:text-train-on-surface">Sin restricciones de batería</Text>
+                </View>
+                <StatusBadge status={batteryStatus} />
+              </View>
+              <Text className="mb-sm text-body-sm text-on-surface-variant dark:text-train-on-surface-variant">
+                Necesario para que el sistema no mate la app en segundo plano y se sigan procesando notificaciones con la app cerrada.
+              </Text>
+              <View className="flex-row gap-sm">
+                <Pressable
+                  onPress={() => NativeModules.NotificationModule?.requestIgnoreBatteryOptimizations?.()}
+                  className="flex-1 h-10 flex-row items-center justify-center gap-xs rounded-lg bg-primary active:opacity-80"
+                >
+                  <Icon name="battery-check-outline" size={16} color="#fff" />
+                  <Text className="font-label-lg text-on-primary">Solicitar</Text>
+                </Pressable>
+                <Pressable onPress={checkBatteryStatus} className="flex-1 h-10 flex-row items-center justify-center gap-xs rounded-lg border border-primary active:opacity-80">
+                  <Icon name="refresh" size={16} color={isDark ? '#c6bfff' : '#86a0cd'} />
+                  <Text className="font-label-lg text-primary dark:text-train-primary">Verificar</Text>
+                </Pressable>
+              </View>
+            </View>
           </>
         )}
+
+        {/* ── Cuenta ── */}
+        <View className="mb-md flex-row items-center gap-sm">
+          <View className="h-px flex-1 bg-outline-variant dark:bg-train-outline-variant" />
+          <Text className="text-label-md text-on-surface-variant dark:text-train-on-surface-variant">Cuenta</Text>
+          <View className="h-px flex-1 bg-outline-variant dark:bg-train-outline-variant" />
+        </View>
+        <Pressable
+          onPress={handleSignOut}
+          className="mb-lg h-touch-target-min flex-row items-center justify-center gap-xs rounded-lg border border-error active:opacity-80"
+        >
+          <Icon name="logout" size={16} color="#ba1a1a" />
+          <Text className="font-label-lg" style={{ color: '#ba1a1a' }}>Cerrar sesión</Text>
+        </Pressable>
 
       </ScrollView>
     </SafeAreaView>

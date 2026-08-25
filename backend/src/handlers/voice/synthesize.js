@@ -2,7 +2,6 @@ import { randomUUID } from 'crypto';
 import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { getUser } from '../../lib/auth.js';
 import { ok, badRequest, serverError } from '../../lib/response.js';
 
 const polly = new PollyClient({});
@@ -15,6 +14,8 @@ const VOICE_MAP = {
   enrique: { VoiceId: 'Enrique', Engine: 'standard' },
 };
 
+const MAX_TEXT_LEN = 2000;
+
 /**
  * Used both for "Probar voz" in Settings and for auto-reading a critical
  * notification once the agent has flagged it. Returns a short-lived
@@ -22,12 +23,12 @@ const VOICE_MAP = {
  */
 export const handler = async (event) => {
   try {
-    const { userId } = getUser(event);
     const { text, voiceId = 'lucia', speed = 1.0, language = 'es-ES' } = JSON.parse(
       event.body || '{}'
     );
 
     if (!text) return badRequest('text is required');
+    if (text.length > MAX_TEXT_LEN) return badRequest(`text must be at most ${MAX_TEXT_LEN} characters`);
     const voice = VOICE_MAP[voiceId] ?? VOICE_MAP.lucia;
 
     const rate = Math.round(Math.max(0.5, Math.min(2.0, speed)) * 100);
@@ -45,7 +46,7 @@ export const handler = async (event) => {
     );
 
     const audioBytes = await synthResult.AudioStream.transformToByteArray();
-    const key = `${userId}/${randomUUID()}.mp3`;
+    const key = `${randomUUID()}.mp3`;
 
     await s3.send(
       new PutObjectCommand({

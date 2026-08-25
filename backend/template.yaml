@@ -1,10 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Prioria backend — notification ingestion, agent-based prioritization
-  (Strands Agents SDK + Bedrock), history/feedback, TTS (Polly) and push
-  delivery (FCM). Deployed to the user's own AWS account — do not reuse
-  the permissions-boundary ARN from any workshop/sandbox account.
+  Prioria backend — stateless: Cognito for login, a Bedrock-backed Lambda
+  that classifies a notification and pushes it via FCM in the same request,
+  a second Bedrock Lambda that distills "Entrenar" chat rules, and Polly TTS.
+  No DynamoDB, no SQS — notifications/rules/preferences all live on-device.
+  Deployed to the user's own AWS account — do not reuse the
+  permissions-boundary ARN from any workshop/sandbox account.
 
 Globals:
   Function:
@@ -15,11 +17,6 @@ Globals:
     Tracing: Active
     Environment:
       Variables:
-        USERS_TABLE: !Ref UsersTable
-        NOTIFICATIONS_TABLE: !Ref NotificationsTable
-        RULES_TABLE: !Ref RulesTable
-        NOTIFICATION_QUEUE_URL: !Ref NotificationQueue
-        PUSH_QUEUE_URL: !Ref PushQueue
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         POWERTOOLS_SERVICE_NAME: prioria
 
@@ -45,10 +42,11 @@ Parameters:
 
 Resources:
   # ---------------------------------------------------------------------
-  # Auth — Cognito is the source of truth for credentials. We never see or
-  # store a raw password: sign-up/sign-in happens against the User Pool
-  # directly from the RN app (SRP), and API Gateway validates the resulting
-  # JWT. Email is both the username and the login "key" per spec.
+  # Auth — Cognito is the source of truth for credentials, and the only
+  # thing this backend persists at all. We never see or store a raw
+  # password: sign-up/sign-in happens against the User Pool directly from
+  # the RN app (SRP), and API Gateway validates the resulting JWT. Email is
+  # both the username and the login "key" per spec.
   # ---------------------------------------------------------------------
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -95,135 +93,27 @@ Resources:
         RefreshToken: days
 
   # ---------------------------------------------------------------------
-  # Data
-  # ---------------------------------------------------------------------
-  UsersTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub prioria-users-${Stage}
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: userId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: userId
-          KeyType: HASH
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
-      SSESpecification:
-        SSEEnabled: true
-
-  # One item per notification, scoped to the owning user. GSI lets the
-  # agent / history screen query "pending" or "critical" without a scan.
-  NotificationsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub prioria-notifications-${Stage}
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: userId
-          AttributeType: S
-        - AttributeName: notificationId
-          AttributeType: S
-        - AttributeName: status
-          AttributeType: S
-        - AttributeName: createdAt
-          AttributeType: S
-      KeySchema:
-        - AttributeName: userId
-          KeyType: HASH
-        - AttributeName: notificationId
-          KeyType: RANGE
-      GlobalSecondaryIndexes:
-        - IndexName: byStatus
-          KeySchema:
-            - AttributeName: userId
-              KeyType: HASH
-            - AttributeName: status
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-        - IndexName: byCreatedAt
-          KeySchema:
-            - AttributeName: userId
-              KeyType: HASH
-            - AttributeName: createdAt
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-      TimeToLiveSpecification:
-        AttributeName: expiresAt
-        Enabled: true
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
-      SSESpecification:
-        SSEEnabled: true
-
-  # Explicit rules the user taught the agent via the "Entrenar" chat.
-  RulesTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub prioria-rules-${Stage}
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: userId
-          AttributeType: S
-        - AttributeName: ruleId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: userId
-          KeyType: HASH
-        - AttributeName: ruleId
-          KeyType: RANGE
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
-      SSESpecification:
-        SSEEnabled: true
-
-  # ---------------------------------------------------------------------
-  # Queues
-  # ---------------------------------------------------------------------
-  NotificationDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub prioria-notifications-dlq-${Stage}
-      MessageRetentionPeriod: 1209600 # 14 days
-
-  NotificationQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub prioria-notifications-${Stage}
-      VisibilityTimeout: 90 # >= agent Lambda timeout * 6, Bedrock calls can be slow
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt NotificationDLQ.Arn
-        maxReceiveCount: 3
-
-  PushDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub prioria-push-dlq-${Stage}
-      MessageRetentionPeriod: 1209600
-
-  PushQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub prioria-push-${Stage}
-      VisibilityTimeout: 30
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt PushDLQ.Arn
-        maxReceiveCount: 3
-
-  # ---------------------------------------------------------------------
   # API
   # ---------------------------------------------------------------------
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref Stage
+      # CORS only matters for browser clients (the RN app isn't subject to
+      # it) — scoped to the landing page's origin instead of '*' as
+      # defense-in-depth, since nothing legitimate calls this from a browser
+      # today.
       CorsConfiguration:
-        AllowOrigins: ['*']
+        AllowOrigins: ['https://lorengrz.github.io']
         AllowHeaders: [Authorization, Content-Type]
         AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+      # No usage plan/WAF in front of this API — these are the only ceiling
+      # on abuse (e.g. a leaked/brute-forced JWT spamming /notifications or
+      # /train to run up the Bedrock/Polly bill). Sized well above real
+      # single-user traffic, well below what makes automated abuse cheap.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 40
+        ThrottlingRateLimit: 20
       Auth:
         Authorizers:
           CognitoAuthorizer:
@@ -234,22 +124,37 @@ Resources:
         DefaultAuthorizer: CognitoAuthorizer
 
   # ---------------------------------------------------------------------
-  # Functions — notifications
+  # Functions — agents (Python — the Strands Agents SDK is Python-native).
+  # Same pattern as LorenGrz/simple-agent: a Strands Agent backed by a
+  # Bedrock model, invoked directly (no reused permissions-boundary ARN
+  # from any workshop account — this stack defines its own IAM roles).
   # ---------------------------------------------------------------------
-  IngestNotificationFunction:
+
+  # Classifies a notification synchronously (Bedrock) and, if it clears the
+  # caller-supplied threshold, pushes it via FCM inline — stateless, no
+  # DynamoDB/SQS. The client sends its own current preferences/active
+  # rules/fcmToken with every request instead of the backend looking them
+  # up from a per-user row.
+  ClassifyNotificationFunction:
     Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/notifications/ingest.js]
     Properties:
-      Handler: src/handlers/notifications/ingest.handler
-      CodeUri: .
+      Handler: classify.handler
+      CodeUri: src/agent/
+      Runtime: python3.13
+      Timeout: 25
+      MemorySize: 512
       Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
-        - SQSSendMessagePolicy: { QueueName: !GetAtt NotificationQueue.QueueName }
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+              Resource: '*'
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource: !Ref FcmServiceAccountSecretArn
+      Environment:
+        Variables:
+          FCM_SERVICE_ACCOUNT_SECRET_ARN: !Ref FcmServiceAccountSecretArn
+          FCM_PROJECT_ID: !Ref FcmProjectId
       Events:
         Api:
           Type: HttpApi
@@ -258,158 +163,27 @@ Resources:
             Path: /notifications
             Method: POST
 
-  ListNotificationsFunction:
+  # Backs the "Entrenar" chat: turns a free-text message into a distilled
+  # rule and hands it straight back — the client persists it locally.
+  TrainAgentFunction:
     Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/notifications/list.js]
     Properties:
-      Handler: src/handlers/notifications/list.handler
-      CodeUri: .
+      Handler: train.handler
+      CodeUri: src/agent/
+      Runtime: python3.13
+      Timeout: 20
+      MemorySize: 512
       Policies:
-        - DynamoDBReadPolicy: { TableName: !Ref NotificationsTable }
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+              Resource: '*'
       Events:
         Api:
           Type: HttpApi
           Properties:
             ApiId: !Ref HttpApi
-            Path: /notifications
-            Method: GET
-
-  # Weak signal: user opened the notification (from the shade or the widget).
-  OpenNotificationFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/notifications/open.js]
-    Properties:
-      Handler: src/handlers/notifications/open.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /notifications/{id}/open
-            Method: POST
-
-  # Strong signal: explicit thumbs up/down from the Historial screen.
-  FeedbackNotificationFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/notifications/feedback.js]
-    Properties:
-      Handler: src/handlers/notifications/feedback.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /notifications/{id}/feedback
-            Method: POST
-
-  # Medium signal: user tapped the widget and briefly opened the app while
-  # that notification was the most recent one — nudge its importance up.
-  BoostNotificationFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/notifications/boost.js]
-    Properties:
-      Handler: src/handlers/notifications/boost.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /notifications/{id}/boost
-            Method: POST
-
-  # ---------------------------------------------------------------------
-  # Functions — preferences & devices
-  # ---------------------------------------------------------------------
-  GetPreferencesFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/preferences/get.js]
-    Properties:
-      Handler: src/handlers/preferences/get.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /preferences
-            Method: GET
-
-  UpdatePreferencesFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/preferences/update.js]
-    Properties:
-      Handler: src/handlers/preferences/update.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /preferences
-            Method: PUT
-
-  RegisterDeviceFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/devices/register.js]
-    Properties:
-      Handler: src/handlers/devices/register.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /devices
+            Path: /train
             Method: POST
 
   # ---------------------------------------------------------------------
@@ -459,230 +233,6 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  # ---------------------------------------------------------------------
-  # Function — push delivery (FCM), decoupled via its own queue so a slow
-  # push provider never backs up notification processing.
-  # ---------------------------------------------------------------------
-  SendPushFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/push/sendPush.js]
-    Properties:
-      Handler: src/handlers/push/sendPush.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
-        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
-        - Statement:
-            - Effect: Allow
-              Action: [secretsmanager:GetSecretValue]
-              Resource: !Ref FcmServiceAccountSecretArn
-      Environment:
-        Variables:
-          FCM_SERVICE_ACCOUNT_SECRET_ARN: !Ref FcmServiceAccountSecretArn
-          FCM_PROJECT_ID: !Ref FcmProjectId
-      Events:
-        Queue:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt PushQueue.Arn
-            BatchSize: 10
-
-  # ---------------------------------------------------------------------
-  # Agent functions (Python — the Strands Agents SDK is Python-native).
-  # Same pattern as LorenGrz/simple-agent: a Strands Agent backed by a
-  # Bedrock model, invoked directly (no reused permissions-boundary ARN
-  # from any workshop account — this stack defines its own IAM roles).
-  # ---------------------------------------------------------------------
-  ProcessNotificationFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: process_notification.handler
-      CodeUri: src/agent/
-      Runtime: python3.13
-      Timeout: 30
-      MemorySize: 512
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
-        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
-        - DynamoDBReadPolicy: { TableName: !Ref RulesTable }
-        - SQSSendMessagePolicy: { QueueName: !GetAtt PushQueue.QueueName }
-        - Statement:
-            - Effect: Allow
-              Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
-              Resource: '*'
-      Events:
-        Queue:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt NotificationQueue.Arn
-            BatchSize: 5
-            FunctionResponseTypes: [ReportBatchItemFailures]
-
-  TrainAgentFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: train.handler
-      CodeUri: src/agent/
-      Runtime: python3.13
-      Timeout: 20
-      MemorySize: 512
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
-        - Statement:
-            - Effect: Allow
-              Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
-              Resource: '*'
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /train
-            Method: POST
-
-  # ---------------------------------------------------------------------
-  # Functions — rules ("Reglas de Filtrado" in Filtros: view/edit/add/delete
-  # the same RulesTable rows train.py and archive.js write, without a chat
-  # roundtrip). Node/esbuild like the notifications handlers, not Python —
-  # these are plain CRUD, no LLM step needed.
-  # ---------------------------------------------------------------------
-  ListRulesFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/rules/list.js]
-    Properties:
-      Handler: src/handlers/rules/list.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
-        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
-        - DynamoDBWritePolicy: { TableName: !Ref UsersTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /rules
-            Method: GET
-
-  CreateRuleFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/rules/create.js]
-    Properties:
-      Handler: src/handlers/rules/create.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /rules
-            Method: POST
-
-  UpdateRuleFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/rules/update.js]
-    Properties:
-      Handler: src/handlers/rules/update.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /rules/{ruleId}
-            Method: PUT
-
-  DeleteRuleFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/rules/delete.js]
-    Properties:
-      Handler: src/handlers/rules/delete.handler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /rules/{ruleId}
-            Method: DELETE
-
-  DeleteNotificationFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/notifications/delete.handler
-      Description: Soft-deletes a notification (sets status=deleted).
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /notifications/{id}
-            Method: DELETE
-
-  ArchiveNotificationsFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: node24
-        EntryPoints: [src/handlers/notifications/archive.js]
-    Properties:
-      Handler: src/handlers/notifications/archive.handler
-      CodeUri: .
-      Timeout: 120
-      Description: >
-        Weekly: folds notifications turning ~30 days old into a running
-        per-(category, sourceApp) rule in RulesTable, then hard-deletes the
-        originals. See archive.js for the full design rationale.
-      Policies:
-        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
-        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
-        - DynamoDBCrudPolicy: { TableName: !Ref RulesTable }
-        - Statement:
-            - Effect: Allow
-              Action: [dynamodb:TransactWriteItems]
-              Resource: [!GetAtt RulesTable.Arn, !GetAtt UsersTable.Arn]
-            - Effect: Allow
-              Action: [dynamodb:UpdateItem]
-              Resource: !GetAtt UsersTable.Arn
-      Events:
-        Weekly:
-          Type: Schedule
-          Properties:
-            Schedule: rate(7 days)
-
 Outputs:
   ApiUrl:
     Description: Base URL for the HTTP API
@@ -691,7 +241,5 @@ Outputs:
     Value: !Ref UserPool
   UserPoolClientId:
     Value: !Ref UserPoolClient
-  NotificationsTableName:
-    Value: !Ref NotificationsTable
   VoiceClipsBucketName:
     Value: !Ref VoiceClipsBucket

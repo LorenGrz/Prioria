@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import Icon from '../components/Icon';
 import RulesModal from '../components/RulesModal';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
-import { apiCall } from '../services/api';
+import { usePreferences } from '../context/PreferencesContext';
 
 type Category = {
   key: string;
@@ -25,43 +24,14 @@ const CATEGORIES: Category[] = [
 ];
 
 export default function FiltersScreen() {
-  const [sensitivity, setSensitivity] = useState(85);
-  const [enabled, setEnabled] = useState<Record<string, boolean>>({
-    bancos: true, pagos: true, trabajo: true,
-    seguridad: true, clientes: false, entregas: true,
-  });
-  const [threshold, setThreshold] = useState<'critico' | 'todo'>('critico');
   const [rulesModalOpen, setRulesModalOpen] = useState(false);
   const { isDark } = useTheme();
-  const { token } = useAuth();
-
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Load preferences from backend on mount
-  useEffect(() => {
-    if (!token) return;
-    apiCall<{
-      sensitivity?: number;
-      categories?: Record<string, boolean>;
-      autoReadMode?: string;
-    }>('/preferences', 'GET', undefined, token)
-      .then((prefs) => {
-        if (prefs.sensitivity != null) setSensitivity(prefs.sensitivity);
-        if (prefs.categories) setEnabled(prefs.categories);
-        if (prefs.autoReadMode === 'critico' || prefs.autoReadMode === 'todo') {
-          setThreshold(prefs.autoReadMode);
-        }
-      })
-      .catch(() => {});
-  }, [token]);
-
-  function scheduleSave(patch: Record<string, unknown>) {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      if (!token) return;
-      apiCall('/preferences', 'PUT', patch, token).catch(() => {});
-    }, 1500);
-  }
+  const { preferences, setPreferences } = usePreferences();
+  const { categories: enabled, autoReadMode: threshold } = preferences;
+  // Local mirror for smooth drag feedback — only commits to the shared
+  // context (and its debounced AsyncStorage write) on release.
+  const [liveSensitivity, setLiveSensitivity] = useState(preferences.sensitivity);
+  useEffect(() => setLiveSensitivity(preferences.sensitivity), [preferences.sensitivity]);
 
   const cardBg    = isDark ? '#1a2123' : '#ffffff';
   const trackMin  = isDark ? '#c6bfff' : '#002045';
@@ -89,13 +59,13 @@ export default function FiltersScreen() {
             <Text className="font-label-lg uppercase text-primary dark:text-train-primary">
               Sensibilidad del filtro AI
             </Text>
-            <Text className="font-bold text-primary dark:text-train-primary">{Math.round(sensitivity)}%</Text>
+            <Text className="font-bold text-primary dark:text-train-primary">{Math.round(liveSensitivity)}%</Text>
           </View>
           <Slider
             minimumValue={0} maximumValue={100}
-            value={sensitivity}
-            onValueChange={setSensitivity}
-            onSlidingComplete={(v) => scheduleSave({ sensitivity: Math.round(v) })}
+            value={liveSensitivity}
+            onValueChange={setLiveSensitivity}
+            onSlidingComplete={(v) => setPreferences({ sensitivity: Math.round(v) })}
             minimumTrackTintColor={trackMin}
             maximumTrackTintColor={trackMax}
             thumbTintColor={thumbColor}
@@ -129,9 +99,7 @@ export default function FiltersScreen() {
                   <Switch
                     value={enabled[cat.key]}
                     onValueChange={(v) => {
-                      const next = { ...enabled, [cat.key]: v };
-                      setEnabled(next);
-                      scheduleSave({ categories: next });
+                      setPreferences({ categories: { ...enabled, [cat.key]: v } });
                     }}
                     trackColor={{ false: isDark ? '#2f3638' : '#dae2fd', true: isDark ? '#6c5ce7' : '#002045' }}
                     thumbColor="#ffffff"
@@ -157,10 +125,7 @@ export default function FiltersScreen() {
               return (
                 <Pressable
                   key={opt.key}
-                  onPress={() => {
-                    setThreshold(opt.key);
-                    scheduleSave({ autoReadMode: opt.key });
-                  }}
+                  onPress={() => setPreferences({ autoReadMode: opt.key })}
                   className={`flex-row items-center justify-between rounded-xl border p-md ${
                     active
                       ? 'border-primary dark:border-train-primary bg-surface-container-high dark:bg-train-surface-container-high'
@@ -193,7 +158,6 @@ export default function FiltersScreen() {
       <RulesModal
         visible={rulesModalOpen}
         onClose={() => setRulesModalOpen(false)}
-        token={token}
         isDark={isDark}
       />
     </SafeAreaView>

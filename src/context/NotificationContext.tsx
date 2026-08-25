@@ -2,30 +2,25 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { DeviceEventEmitter, NativeModules, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import { useAuth } from './AuthContext';
-import { apiCall } from '../services/api';
+import { usePreferences } from './PreferencesContext';
+import { useRules } from './RulesContext';
+import { classifyNotification } from '../services/classify';
+import {
+  getAllNotifications,
+  saveNotifications,
+  type NotifEntry,
+  type NotifPriority,
+} from '../lib/storage/notifications';
+import { clampScore, labelForScore } from '../lib/scoring';
+import type { Preferences } from '../lib/storage/preferences';
 
-export type NotifPriority = 'critica' | 'aviso' | 'info' | null;
-
-export type NotifEntry = {
-  id: string;
-  backendId?: string;
-  title: string;
-  body: string;
-  appName: string;
-  packageName: string;
-  receivedAt: Date;
-  source: 'local' | 'system';
-  priority: NotifPriority;
-  priorityScore: number | null;
-  autoRead?: boolean;
-};
+export type { NotifEntry, NotifPriority };
 
 type NotifContextValue = {
   notifications: NotifEntry[];
   clearAll: () => void;
   updatePriority: (id: string, priority: NotifPriority) => void;
   removeNotification: (id: string) => void;
-  markOpened: (id: string) => void;
   boostPriority: (id: string) => void;
 };
 
@@ -48,50 +43,50 @@ function scoreLocally(title: string, body: string): NotifPriority {
   return 'info';
 }
 
-const LABEL_MAP: Record<string, NotifPriority> = {
-  critica: 'critica',
-  aviso: 'aviso',
-  info: 'info',
-};
-
-function fromBackend(item: Record<string, unknown>): NotifEntry {
-  return {
-    id: (item.notificationId as string) ?? String(Date.now()),
-    backendId: item.notificationId as string,
-    title: (item.title as string) ?? '',
-    body: (item.body as string) ?? '',
-    appName: (item.sourceApp as string) ?? '',
-    packageName: (item.sourceApp as string) ?? '',
-    receivedAt: new Date((item.createdAt as string) ?? Date.now()),
-    source: 'system',
-    priority: LABEL_MAP[(item.priorityLabel as string)] ?? null,
-    priorityScore: (item.priorityScore as number) ?? null,
-    autoRead: Boolean(item.autoRead),
-  };
-}
+const BAND_SCORE: Record<Exclude<NotifPriority, null>, number> = { critica: 90, aviso: 60, info: 20 };
 
 const NotifContext = createContext<NotifContextValue>({
   notifications: [],
   clearAll: () => {},
   updatePriority: () => {},
   removeNotification: () => {},
-  markOpened: () => {},
   boostPriority: () => {},
 });
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<NotifEntry[]>([]);
-  const { token, isAuthReady } = useAuth();
+  const [loaded, setLoaded] = useState(false);
+  const { token } = useAuth();
+  const { preferences } = usePreferences();
+  const { activeRuleTexts } = useRules();
 
   const tokenRef = useRef(token);
   useEffect(() => { tokenRef.current = token; }, [token]);
+
+  const preferencesRef = useRef<Preferences>(preferences);
+  useEffect(() => { preferencesRef.current = preferences; }, [preferences]);
 
   // Stable ref to current notifications — avoids stale closures in callbacks
   const notificationsRef = useRef<NotifEntry[]>([]);
   useEffect(() => { notificationsRef.current = notifications; }, [notifications]);
 
-  // Ref to boostByBackendId — updated each render so the widget listener is never stale
-  const boostByBackendIdRef = useRef<(backendId: string) => void>(() => {});
+  // Ref to boostByLocalId — updated each render so the widget listener is never stale
+  const boostByLocalIdRef = useRef<(localId: string) => void>(() => {});
+
+  // Load persisted history on mount (local-only now — no more GET /notifications)
+  useEffect(() => {
+    getAllNotifications().then((entries) => {
+      setNotifications(entries);
+      setLoaded(true);
+    });
+  }, []);
+
+  // Persist on every change, once the initial load has completed (otherwise
+  // the empty initial state would overwrite storage before it's read).
+  useEffect(() => {
+    if (!loaded) return;
+    saveNotifications(notifications).catch(() => {});
+  }, [notifications, loaded]);
 
   // TTS: fires when the agent upgrades a notification to critica + autoRead
   const prevPriorityRef = useRef<Map<string, NotifPriority>>(new Map());
@@ -105,77 +100,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     prevPriorityRef.current = new Map(notifications.map((n) => [n.id, n.priority]));
   }, [notifications]);
 
-  // Load history from backend on startup
-  useEffect(() => {
-    if (!isAuthReady || !token) return;
-    apiCall<{ items: Record<string, unknown>[] }>('/notifications', 'GET', undefined, token)
-      .then((data) => {
-        if (Array.isArray(data?.items)) {
-          setNotifications(data.items.map(fromBackend));
-        }
-      })
-      .catch((err) => console.warn('[NotifContext] GET /notifications failed:', err));
-  }, [isAuthReady, token]);
-
-  // Merge agent verdicts from backend into local state + push update to widget
-  const refreshFromBackend = () => {
-    const t = tokenRef.current;
-    if (!t) return;
-    apiCall<{ items: Record<string, unknown>[] }>('/notifications', 'GET', undefined, t)
-      .then((data) => {
-        if (!Array.isArray(data?.items)) return;
-        const byBackendId = new Map(
-          data.items.map((item) => [item.notificationId as string, item])
-        );
-
-        // Compute what changed using the current ref (avoids impure state updater)
-        const current = notificationsRef.current;
-        const updates = new Map<string, Partial<NotifEntry>>();
-
-        for (const n of current) {
-          if (!n.backendId) continue;
-          const remote = byBackendId.get(n.backendId);
-          if (!remote || remote.priorityScore == null) continue;
-          const newPriority = LABEL_MAP[remote.priorityLabel as string] ?? n.priority;
-          const newScore = Number(remote.priorityScore);
-          if (newPriority !== n.priority || newScore !== n.priorityScore) {
-            updates.set(n.id, {
-              priority: newPriority,
-              priorityScore: newScore,
-              autoRead: Boolean(remote.autoRead),
-            });
-          }
-        }
-
-        if (updates.size === 0) return;
-
-        setNotifications((prev) =>
-          prev.map((n) => {
-            const patch = updates.get(n.id);
-            return patch ? { ...n, ...patch } : n;
-          })
-        );
-
-        // Update the home-screen widget with the most recently updated notification
-        if (Platform.OS === 'android') {
-          const updatedEntries = current.filter((n) => updates.has(n.id));
-          if (updatedEntries.length === 0) return;
-          const latest = updatedEntries.reduce((a, b) =>
-            a.receivedAt > b.receivedAt ? a : b
-          );
-          const patch = updates.get(latest.id)!;
-          NativeModules.NotificationModule?.updateWidgetPriority?.(
-            latest.title,
-            latest.body,
-            latest.appName,
-            patch.priority ?? 'info',
-            latest.receivedAt.getTime(),
-          );
-        }
-      })
-      .catch(() => {});
-  };
-
   // Live notification listeners (system + local expo push) + widget boost listener
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -184,22 +108,28 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setNotifications((prev) => [entry, ...prev]);
       const t = tokenRef.current;
       if (!t) return;
-      apiCall<{ notificationId: string }>('/notifications', 'POST', {
+
+      classifyNotification({
         title: entry.title,
         body: entry.body,
         sourceApp: entry.packageName || entry.appName,
-      }, t)
-        .then((data) => {
-          if (!data?.notificationId) return;
+        preferences: preferencesRef.current,
+        activeRules: activeRuleTexts(),
+        token: t,
+      })
+        .then((verdict) => {
           setNotifications((prev) =>
             prev.map((n) =>
-              n.id === entry.id ? { ...n, backendId: data.notificationId } : n
+              n.id === entry.id
+                ? { ...n, priority: verdict.label, priorityScore: verdict.priorityScore, autoRead: verdict.autoRead }
+                : n
             )
           );
-          // Store backendId in native SharedPreferences for widget tap → boost
-          NativeModules.NotificationModule?.setLastBackendId?.(data.notificationId);
-          // Pick up agent verdict after async SQS processing
-          setTimeout(refreshFromBackend, 8000);
+          // Store the local id in native SharedPreferences for widget tap → boost
+          NativeModules.NotificationModule?.setLastBackendId?.(entry.id);
+          NativeModules.NotificationModule?.updateWidgetPriority?.(
+            entry.title, entry.body, entry.appName, verdict.label, entry.receivedAt.getTime(),
+          );
         })
         .catch(() => {});
     };
@@ -227,11 +157,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       }
     );
 
-    // Widget tap → boost: uses ref so it always calls the latest boostByBackendId
+    // Widget tap → boost: uses ref so it always calls the latest boostByLocalId
     const widgetBoostSub = DeviceEventEmitter.addListener(
       'onWidgetTapBoost',
       (event: { notificationId: string }) => {
-        boostByBackendIdRef.current(event.notificationId);
+        boostByLocalIdRef.current(event.notificationId);
       }
     );
 
@@ -268,93 +198,38 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const clearAll = () => setNotifications([]);
 
+  // Strong reinforcement signal from Historial's chips — sets score directly
+  // to the picked band's representative value (mirrors the old feedback.js).
   const updatePriority = (id: string, priority: NotifPriority) => {
+    if (!priority) return;
+    const score = BAND_SCORE[priority];
     setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, priority } : n))
+      prev.map((n) => (n.id === id ? { ...n, priority, priorityScore: score } : n))
     );
-    const entry = notificationsRef.current.find((n) => n.id === id);
-    const t = tokenRef.current;
-    if (!entry?.backendId || !t || !priority) return;
-    apiCall<Record<string, unknown>>(
-      `/notifications/${entry.backendId}/feedback`,
-      'POST',
-      { priority },
-      t
-    )
-      .then((attrs) => {
-        if (attrs?.priorityScore == null) return;
-        const newScore = Number(attrs.priorityScore);
-        const newPriority = LABEL_MAP[attrs.priorityLabel as string] ?? priority;
-        setNotifications((prev) =>
-          prev.map((n) =>
-            n.id === id ? { ...n, priorityScore: newScore, priority: newPriority } : n
-          )
-        );
-      })
-      .catch(() => {});
   };
 
   const removeNotification = (id: string) => {
-    const entry = notificationsRef.current.find((n) => n.id === id);
     setNotifications((prev) => prev.filter((n) => n.id !== id));
-    const t = tokenRef.current;
-    if (entry?.backendId && t) {
-      apiCall(`/notifications/${entry.backendId}`, 'DELETE', undefined, t).catch(() => {});
-    }
   };
 
-  // Weak signal: records that the user opened/read the notification
-  const markOpened = (id: string) => {
-    const entry = notificationsRef.current.find((n) => n.id === id);
-    const t = tokenRef.current;
-    if (entry?.backendId && t) {
-      apiCall(`/notifications/${entry.backendId}/open`, 'POST', undefined, t).catch(() => {});
-    }
-  };
-
-  // Medium signal: explicit user interaction → bumps priorityScore in DB
+  // Medium signal: widget tap or Historial card tap — nudges score up (mirrors the old boost.js).
+  const BOOST_AMOUNT = 8;
   const boostPriority = (id: string) => {
-    const entry = notificationsRef.current.find((n) => n.id === id);
-    const t = tokenRef.current;
-    if (!entry?.backendId || !t) return;
-    apiCall<Record<string, unknown>>(
-      `/notifications/${entry.backendId}/boost`,
-      'POST',
-      undefined,
-      t
-    )
-      .then((attrs) => {
-        if (attrs?.priorityScore == null) return;
-        const newScore = Number(attrs.priorityScore);
-        const newPriority = LABEL_MAP[attrs.priorityLabel as string] ?? entry.priority;
-        setNotifications((prev) =>
-          prev.map((n) =>
-            n.id === id ? { ...n, priorityScore: newScore, priority: newPriority } : n
-          )
-        );
+    setNotifications((prev) =>
+      prev.map((n) => {
+        if (n.id !== id) return n;
+        const nextScore = clampScore((n.priorityScore ?? 50) + BOOST_AMOUNT);
+        return { ...n, priorityScore: nextScore, priority: labelForScore(nextScore) };
       })
-      .catch(() => {});
-  };
-
-  // Widget tapped: find by backendId and boost; fallback to direct API if not in local list
-  const boostByBackendId = (backendId: string) => {
-    const n = notificationsRef.current.find((n) => n.backendId === backendId);
-    if (n) {
-      boostPriority(n.id);
-    } else {
-      const t = tokenRef.current;
-      if (t) {
-        apiCall(`/notifications/${backendId}/boost`, 'POST', undefined, t).catch(() => {});
-      }
-    }
+    );
   };
 
   // Keep ref current so the widget boost listener (captured at mount) always has the latest impl
-  boostByBackendIdRef.current = boostByBackendId;
+  boostByLocalIdRef.current = boostPriority;
 
   return (
     <NotifContext.Provider
-      value={{ notifications, clearAll, updatePriority, removeNotification, markOpened, boostPriority }}
+      value={{ notifications, clearAll, updatePriority, removeNotification, boostPriority }}
     >
       {children}
     </NotifContext.Provider>
