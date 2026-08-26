@@ -26,13 +26,23 @@ export default function RootNavigator() {
     return <View style={{ flex: 1 }} />;
   }
 
-  const initialRoute = status === 'needsLogin' ? 'Login' : onboardingDone ? 'Main' : 'Onboarding';
-
+  // Conditionally rendering Stack.Screen (rather than swapping the whole
+  // Navigator via a `key`) is the pattern react-navigation actually expects
+  // for auth flows: the library reacts to the screen list changing and
+  // switches on its own. The `key` remount looked correct but silently
+  // didn't propagate to react-native-screens on Android — status/onboarding
+  // would update (confirmed via logging) while the visible screen didn't,
+  // stranding the user on Login after a real sign-in, and on Main after
+  // sign-out, until the app was force-restarted.
   return (
-    <Stack.Navigator key={initialRoute} initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      <Stack.Screen name="Main" component={SwipeTabNavigator} />
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {status === 'needsLogin' ? (
+        <Stack.Screen name="Login" component={LoginScreen} />
+      ) : onboardingDone ? (
+        <Stack.Screen name="Main" component={SwipeTabNavigator} />
+      ) : (
+        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+      )}
     </Stack.Navigator>
   );
 }
